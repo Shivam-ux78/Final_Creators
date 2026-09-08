@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
-import { Sparkles, Mail, ShieldCheck, Settings, Database, Instagram, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Sparkles, Mail, ShieldCheck, Settings, Database, Instagram, RefreshCw, LogOut } from 'lucide-react';
 
 interface NavbarProps {
   onOpenSettings: () => void;
@@ -24,6 +25,24 @@ export default function Navbar({
   pendingCount,
   batchProgress
 }: NavbarProps) {
+  const router = useRouter();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (confirm('Are you sure you want to sign out of MakeAble Admin?')) {
+      setIsLoggingOut(true);
+      try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        router.push('/login');
+        router.refresh();
+      } catch (err) {
+        console.error('Logout error:', err);
+      } finally {
+        setIsLoggingOut(false);
+      }
+    }
+  };
+
   return (
     <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -99,10 +118,22 @@ export default function Navbar({
             {/* Email Signature Settings */}
             <button
               onClick={onOpenSettings}
-              className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors shadow-sm"
+              className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300/80 rounded-lg transition-colors shadow-sm"
+              title="Configure Outreach Signature"
             >
               <Settings className="h-4 w-4" />
               <span className="hidden sm:inline">Settings</span>
+            </button>
+
+            {/* Logout Button */}
+            <button
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors shadow-sm"
+              title="Sign Out"
+            >
+              <LogOut className="h-4 w-4 text-rose-600" />
+              <span className="hidden sm:inline">{isLoggingOut ? 'Signing out...' : 'Logout'}</span>
             </button>
           </div>
 
