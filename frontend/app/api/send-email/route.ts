@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
-import { supabase } from '@/lib/supabase';
-import { recordEmailSent, isAlreadySent } from '@/lib/creators-storage';
+import { recordEmailSent } from '@/lib/creators-storage';
+import { getConfiguredSenders } from '../automated-outreach/route';
 
 export async function POST(req: Request) {
   try {
@@ -12,7 +12,9 @@ export async function POST(req: Request) {
       username,
       subject,
       body,
-      signature
+      signature,
+      customSenderEmail,
+      customSenderName
     } = await req.json();
 
     if (!toEmail || !subject || !body) {
@@ -22,9 +24,19 @@ export async function POST(req: Request) {
       );
     }
 
-    const senderName = process.env.SENDER_NAME || signature?.senderName || 'Brand Partnerships';
-    const senderEmail = process.env.SENDER_EMAIL || 'collab@yourdomain.com';
-    const resendApiKey = process.env.RESEND_API_KEY;
+    const accounts = getConfiguredSenders();
+    let senderName = customSenderName || process.env.SENDER_NAME || signature?.senderName || 'MakeAble Partnerships';
+    let senderEmail = customSenderEmail || process.env.SENDER_EMAIL || 'partnerships@makeable.info';
+    let resendApiKey = process.env.RESEND_API_KEY;
+
+    // Pick matching account key if customSenderEmail belongs to account 2
+    if (customSenderEmail) {
+      const matched = accounts.find(a => customSenderEmail.trim().toLowerCase().includes(a.senderEmail.split('@')[1] || ''));
+      if (matched) {
+        resendApiKey = matched.apiKey;
+        senderName = customSenderName || matched.senderName;
+      }
+    }
 
     // Append signature if present and not already at end of body
     let finalBody = body;
@@ -84,7 +96,7 @@ export async function POST(req: Request) {
         throw new Error(`Resend error: ${resendData.error.message}`);
       }
       messageId = resendData.data?.id || 'resend-sent';
-      methodUsed = 'Resend API';
+      methodUsed = `Resend API (${senderEmail})`;
     } 
     // 2. Try Custom SMTP / Nodemailer if configured
     else if (process.env.SMTP_USER && process.env.SMTP_PASS) {

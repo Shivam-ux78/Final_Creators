@@ -2,12 +2,55 @@ import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import OpenAI from 'openai';
 import { supabase } from '@/lib/supabase';
-import { getAllCreators, isAlreadySent, recordEmailSent } from '@/lib/creators-storage';
+import { getAllCreators, recordEmailSent } from '@/lib/creators-storage';
 import fs from 'fs';
 import path from 'path';
 
 // Persistent State file path
 const STATE_FILE = path.join(process.cwd(), '.batch_outreach_state.json');
+
+// Helper to get all configured Resend accounts
+export function getConfiguredSenders() {
+  const accounts: Array<{
+    id: string;
+    apiKey: string;
+    senderName: string;
+    senderEmail: string;
+    label: string;
+  }> = [];
+
+  if (process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.startsWith('re_')) {
+    accounts.push({
+      id: 'sender_1',
+      apiKey: process.env.RESEND_API_KEY,
+      senderName: process.env.SENDER_NAME || 'MakeAble Partnerships',
+      senderEmail: process.env.SENDER_EMAIL || 'partnerships@makeable.info',
+      label: `${process.env.SENDER_NAME || 'MakeAble Partnerships'} (${process.env.SENDER_EMAIL || 'partnerships@makeable.info'})`
+    });
+  }
+
+  if (process.env.RESEND_API_KEY_2 && process.env.RESEND_API_KEY_2.startsWith('re_')) {
+    accounts.push({
+      id: 'sender_2',
+      apiKey: process.env.RESEND_API_KEY_2,
+      senderName: process.env.SENDER_NAME_2 || process.env.SENDER_NAME || 'MakeAble Partnerships',
+      senderEmail: process.env.SENDER_EMAIL_2 || 'collab@makeable.online',
+      label: `${process.env.SENDER_NAME_2 || 'MakeAble Partnerships'} (${process.env.SENDER_EMAIL_2 || 'collab@makeable.online'})`
+    });
+  }
+
+  if (process.env.RESEND_API_KEY_3 && process.env.RESEND_API_KEY_3.startsWith('re_')) {
+    accounts.push({
+      id: 'sender_3',
+      apiKey: process.env.RESEND_API_KEY_3,
+      senderName: process.env.SENDER_NAME_3 || process.env.SENDER_NAME || 'MakeAble Partnerships',
+      senderEmail: process.env.SENDER_EMAIL_3 || 'support@makeable.website',
+      label: `${process.env.SENDER_NAME_3 || 'MakeAble Partnerships'} (${process.env.SENDER_EMAIL_3 || 'support@makeable.website'})`
+    });
+  }
+
+  return accounts;
+}
 
 // Helper to read state
 function getBatchState() {
@@ -25,6 +68,7 @@ function getBatchState() {
     sent: 0,
     failed: 0,
     currentCreator: '',
+    currentSender: '',
     statusMessage: 'Idle. No active batch running.',
     startedAt: null,
     lastUpdatedAt: new Date().toISOString(),
@@ -54,6 +98,10 @@ async function runBackgroundBatch(options: {
   dryRun: boolean;
   commissionRate: string;
   buyerDiscount: string;
+  senderMode: string; // 'rotate' | 'sender_1' | 'sender_2' | 'custom'
+  customSenderEmail?: string;
+  customSenderName?: string;
+  rotationInterval?: number; // default 5 emails per rotation
 }) {
   const {
     limit,
@@ -61,14 +109,16 @@ async function runBackgroundBatch(options: {
     maxSleepSeconds,
     dryRun,
     commissionRate,
-    buyerDiscount
+    buyerDiscount,
+    senderMode = 'rotate',
+    customSenderEmail,
+    customSenderName,
+    rotationInterval = 5
   } = options;
 
-  const senderName = process.env.SENDER_NAME || 'MakeAble Partnerships';
-  const senderEmail = process.env.SENDER_EMAIL || 'support@makeable.info';
   const replyTo = process.env.REPLY_TO_EMAIL || 'support@makeable.nyc';
-  const resendApiKey = process.env.RESEND_API_KEY;
   const openaiApiKey = process.env.OPENAI_API_KEY;
+  const accounts = getConfiguredSenders();
 
   let state = getBatchState();
 
@@ -97,7 +147,6 @@ async function runBackgroundBatch(options: {
     state.statusMessage = `Processing batch of ${pendingCreators.length} creators in background...`;
     saveBatchState(state);
 
-    const resend = resendApiKey && resendApiKey.startsWith('re_') ? new Resend(resendApiKey) : null;
     let openai: OpenAI | null = null;
     if (openaiApiKey && openaiApiKey.trim().length > 15 && !openaiApiKey.includes('your-openai')) {
       try {
@@ -127,8 +176,42 @@ async function runBackgroundBatch(options: {
       const bio = creator.biography || '';
       const toEmail = creator.email;
 
+      // Select sender account & email based on senderMode and 5-email rotation
+      let activeSenderName = 'MakeAble Partnerships';
+      let activeSenderEmail = 'partnerships@makeable.info';
+      let activeApiKey = process.env.RESEND_API_KEY || '';
+
+      if (senderMode === 'rotate' && accounts.length > 0) {
+        // Rotate every N emails (default: 5)
+        const accountIdx = Math.floor(i / rotationInterval) % accounts.length;
+        const selected = accounts[accountIdx];
+        activeSenderName = selected.senderName;
+        activeSenderEmail = selected.senderEmail;
+        activeApiKey = selected.apiKey;
+      } else if (senderMode === 'sender_2' && accounts.find(a => a.id === 'sender_2')) {
+        const selected = accounts.find(a => a.id === 'sender_2')!;
+        activeSenderName = selected.senderName;
+        activeSenderEmail = selected.senderEmail;
+        activeApiKey = selected.apiKey;
+      } else if (senderMode === 'sender_1' && accounts.length > 0) {
+        activeSenderName = accounts[0].senderName;
+        activeSenderEmail = accounts[0].senderEmail;
+        activeApiKey = accounts[0].apiKey;
+      } else if (senderMode === 'custom' && customSenderEmail) {
+        activeSenderEmail = customSenderEmail.trim();
+        activeSenderName = customSenderName?.trim() || process.env.SENDER_NAME || 'MakeAble Partnerships';
+        // Pick best matching account or default to account 1
+        const matched = accounts.find(a => activeSenderEmail.endsWith(a.senderEmail.split('@')[1] || ''));
+        activeApiKey = matched ? matched.apiKey : (accounts[0]?.apiKey || '');
+      } else if (accounts.length > 0) {
+        activeSenderName = accounts[0].senderName;
+        activeSenderEmail = accounts[0].senderEmail;
+        activeApiKey = accounts[0].apiKey;
+      }
+
       state.currentCreator = username;
-      state.statusMessage = `[${i + 1}/${pendingCreators.length}] Generating AI pitch & sending to @${username}...`;
+      state.currentSender = activeSenderEmail;
+      state.statusMessage = `[${i + 1}/${pendingCreators.length}] Sending to @${username} via ${activeSenderEmail}...`;
       saveBatchState(state);
 
       let subject = '';
@@ -168,7 +251,7 @@ STRICT GUIDELINES:
    - Call to Action: Low friction next step — ask them to reply with their shipping address to get their free package dispatched and affiliate portal set up.
    - Sign-off:
      Warmly,
-     MakeAble Team
+     ${activeSenderName}
      https://makeable.nyc
 
 Return STRICT JSON: {"subject": "...", "body": "..."}`;
@@ -219,7 +302,7 @@ Here is what we're offering:
 If you'd like to collaborate, simply reply with your shipping address and we'll get your free gifting box sent out and your affiliate portal activated immediately!
 
 Warmly,
-MakeAble Team
+${activeSenderName}
 https://makeable.nyc`,
 
           `Hey ${cleanName},
@@ -236,22 +319,23 @@ Here's how we partner:
 Would you be interested in joining? If so, reply with your best shipping address and we'll dispatch your package and log you into the partner dashboard!
 
 Warmly,
-MakeAble Team
+${activeSenderName}
 https://makeable.nyc`
         ];
 
         body = bodyTemplates[hash % bodyTemplates.length];
       }
 
-      // C. Dispatch via Resend
+      // C. Dispatch via Resend (using the designated rotated client)
       let sentSuccess = false;
       let logEntry = '';
 
       if (dryRun) {
         sentSuccess = true;
-        logEntry = `[DRY RUN] Generated pitch for @${username} (${toEmail})`;
-      } else if (resend) {
+        logEntry = `[DRY RUN] Generated pitch for @${username} (${toEmail}) via ${activeSenderEmail}`;
+      } else if (activeApiKey && activeApiKey.startsWith('re_')) {
         try {
+          const resendClient = new Resend(activeApiKey);
           let formatted = body;
           formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #0f172a; font-weight: 700;">$1</strong>');
           formatted = formatted.replace(/^[*\-•]\s+/gm, '<span style="color: #6366f1; font-weight: bold; margin-right: 6px;">•</span> ');
@@ -264,8 +348,8 @@ https://makeable.nyc`
             </div>
           `;
 
-          const resendData = await resend.emails.send({
-            from: `${senderName} <${senderEmail}>`,
+          const resendData = await resendClient.emails.send({
+            from: `${activeSenderName} <${activeSenderEmail}>`,
             to: [toEmail],
             replyTo: replyTo,
             reply_to: replyTo as any,
@@ -279,14 +363,16 @@ https://makeable.nyc`
 
           if (resendData.data?.id) {
             sentSuccess = true;
-            logEntry = `✓ Sent to @${username} (${toEmail}) — Subj: "${subject.slice(0, 35)}..."`;
+            logEntry = `✓ Sent to @${username} (${toEmail}) via [${activeSenderEmail}]`;
           } else {
-            logEntry = `✗ Failed sending to @${username}: ${resendData.error?.message || 'Unknown error'}`;
+            logEntry = `✗ Failed sending to @${username} via [${activeSenderEmail}]: ${resendData.error?.message || 'Unknown error'}`;
           }
         } catch (resendErr: any) {
           logEntry = `✗ Error sending to @${username}: ${resendErr.message}`;
           console.error(`Resend error sending to ${toEmail}:`, resendErr);
         }
+      } else {
+        logEntry = `✗ No valid Resend API key configured for ${activeSenderEmail}`;
       }
 
       const nowIso = new Date().toISOString();
@@ -305,7 +391,7 @@ https://makeable.nyc`
       }
 
       state.recentLogs = [
-        { time: new Date().toLocaleTimeString(), message: logEntry, success: sentSuccess },
+        { time: new Date().toLocaleTimeString(), message: logEntry, success: sentSuccess, sender: activeSenderEmail },
         ...state.recentLogs.slice(0, 19)
       ];
       saveBatchState(state);
@@ -332,11 +418,13 @@ https://makeable.nyc`
   }
 }
 
-// GET: Retrieve live background batch status (for polling when reopening the site)
+// GET: Retrieve live background batch status + configured senders
 export async function GET() {
   const state = getBatchState();
+  const senders = getConfiguredSenders();
   return NextResponse.json({
     success: true,
+    senders,
     ...state
   });
 }
@@ -365,7 +453,11 @@ export async function POST(req: Request) {
       maxSleepSeconds = 30,
       dryRun = false,
       commissionRate = '15%',
-      buyerDiscount = '10%'
+      buyerDiscount = '10%',
+      senderMode = 'rotate',
+      customSenderEmail,
+      customSenderName,
+      rotationInterval = 5
     } = body;
 
     const currentState = getBatchState();
@@ -384,7 +476,8 @@ export async function POST(req: Request) {
       sent: 0,
       failed: 0,
       currentCreator: 'Initializing...',
-      statusMessage: `Starting background batch for ${limit} creators...`,
+      currentSender: '',
+      statusMessage: `Starting background batch for ${limit} creators (Mode: ${senderMode === 'rotate' ? 'Auto-Rotate 5/domain' : senderMode})...`,
       startedAt: new Date().toISOString(),
       lastUpdatedAt: new Date().toISOString(),
       recentLogs: [],
@@ -399,7 +492,11 @@ export async function POST(req: Request) {
       maxSleepSeconds,
       dryRun,
       commissionRate,
-      buyerDiscount
+      buyerDiscount,
+      senderMode,
+      customSenderEmail,
+      customSenderName,
+      rotationInterval
     }).catch((e) => {
       console.error('Background runner unhandled exception:', e);
     });
@@ -418,4 +515,3 @@ export async function POST(req: Request) {
     );
   }
 }
-

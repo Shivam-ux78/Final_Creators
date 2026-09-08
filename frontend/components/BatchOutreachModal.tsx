@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, CheckCircle2, AlertCircle, Zap, ShieldCheck, RefreshCw, Square, Terminal, Sparkles, Send } from 'lucide-react';
+import { X, Play, CheckCircle2, AlertCircle, Zap, ShieldCheck, RefreshCw, Square, Terminal, Sparkles, Send, Repeat, Mail, Settings2 } from 'lucide-react';
 
 interface BatchOutreachModalProps {
   isOpen: boolean;
@@ -22,16 +22,23 @@ export default function BatchOutreachModal({
   const [maxSleep, setMaxSleep] = useState(30);
   const [dryRun, setDryRun] = useState(false);
 
+  // Multi-Account Sender Rotation State
+  const [senderMode, setSenderMode] = useState<'rotate' | 'sender_1' | 'sender_2' | 'custom'>('rotate');
+  const [rotationInterval, setRotationInterval] = useState(5);
+  const [customSenderEmail, setCustomSenderEmail] = useState('');
+  const [customSenderName, setCustomSenderName] = useState('MakeAble Partnerships');
+  const [configuredSenders, setConfiguredSenders] = useState<Array<{ id: string; label: string; senderEmail: string }>>([]);
+
   const [isRunning, setIsRunning] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
-  const [progress, setProgress] = useState<{ total: number; sent: number; failed?: number; currentCreator?: string } | null>(null);
+  const [progress, setProgress] = useState<{ total: number; sent: number; failed?: number; currentCreator?: string; currentSender?: string } | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [recentLogs, setRecentLogs] = useState<Array<{ time: string; message: string; success: boolean }>>([]);
+  const [recentLogs, setRecentLogs] = useState<Array<{ time: string; message: string; success: boolean; sender?: string }>>([]);
   
   const wasRunningRef = useRef(false);
 
-  // Fetch status from server
+  // Fetch status & configured senders from server
   const fetchStatus = async () => {
     try {
       const res = await fetch('/api/automated-outreach');
@@ -43,8 +50,13 @@ export default function BatchOutreachModal({
           total: data.total || 0,
           sent: data.sent || 0,
           failed: data.failed || 0,
-          currentCreator: data.currentCreator || ''
+          currentCreator: data.currentCreator || '',
+          currentSender: data.currentSender || ''
         });
+
+        if (Array.isArray(data.senders) && data.senders.length > 0) {
+          setConfiguredSenders(data.senders);
+        }
 
         if (currentlyRunning) {
           setStatusMessage(data.statusMessage || 'Outreach engine active in background...');
@@ -97,7 +109,11 @@ export default function BatchOutreachModal({
           limit: sendAll ? 0 : targetCount, // 0 = send all pending
           minSleepSeconds: minSleep,
           maxSleepSeconds: maxSleep,
-          dryRun
+          dryRun,
+          senderMode,
+          customSenderEmail,
+          customSenderName,
+          rotationInterval
         })
       });
 
@@ -160,7 +176,7 @@ export default function BatchOutreachModal({
                 )}
               </div>
               <p className="text-xs text-slate-500">
-                100% automatic — runs on server even when browser is closed
+                100% automatic — multi-domain rotation & background execution
               </p>
             </div>
           </div>
@@ -179,9 +195,9 @@ export default function BatchOutreachModal({
           <div className="p-3 bg-violet-50/80 border border-violet-200 rounded-xl flex items-start space-x-2.5 text-violet-900">
             <ShieldCheck className="h-4 w-4 text-violet-600 shrink-0 mt-0.5" />
             <div className="leading-relaxed">
-              <span className="font-bold block">Zero Maintenance Background Outreach:</span>
+              <span className="font-bold block">Multi-Domain Anti-Spam Rotation:</span>
               <span className="text-slate-600 text-[11px]">
-                Clicking Start will automatically generate AI pitches tailored to each creator and send them one by one. Once all emails are sent, it stops automatically. You can safely close your browser tab.
+                Rotates senders every 5 emails between your verified Resend accounts to maximize deliverability and avoid rate limits. Runs continuously in background.
               </span>
             </div>
           </div>
@@ -216,14 +232,21 @@ export default function BatchOutreachModal({
 
                 {/* Status message */}
                 <div className="text-[11px] text-slate-300 flex items-center justify-between">
-                  <span className="truncate max-w-[340px] font-medium">
+                  <span className="truncate max-w-[320px] font-medium">
                     {statusMessage || 'Processing outreach emails...'}
                   </span>
-                  {progress?.currentCreator && (
-                    <span className="px-2 py-0.5 bg-slate-800 text-violet-300 rounded font-mono text-[10px]">
-                      @{progress.currentCreator}
-                    </span>
-                  )}
+                  <div className="flex items-center space-x-1.5 shrink-0">
+                    {progress?.currentSender && (
+                      <span className="px-2 py-0.5 bg-indigo-950 text-indigo-300 border border-indigo-800 rounded font-mono text-[10px]">
+                        {progress.currentSender.split('@')[1] || progress.currentSender}
+                      </span>
+                    )}
+                    {progress?.currentCreator && (
+                      <span className="px-2 py-0.5 bg-slate-800 text-violet-300 rounded font-mono text-[10px]">
+                        @{progress.currentCreator}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -232,7 +255,7 @@ export default function BatchOutreachModal({
                 <div className="flex items-center justify-between mb-1.5 text-slate-600 font-bold text-[11px]">
                   <span className="flex items-center space-x-1">
                     <Terminal className="h-3.5 w-3.5 text-slate-500" />
-                    <span>Real-time Dispatch Stream</span>
+                    <span>Real-time Dispatch Stream (with Sender Rotation)</span>
                   </span>
                   <span className="text-[10px] text-slate-400 font-normal">Live from Supabase</span>
                 </div>
@@ -266,7 +289,7 @@ export default function BatchOutreachModal({
                     </span>
                   </div>
                   <div className="text-right">
-                    <span className="text-xs text-slate-500 block">Single-Source DB</span>
+                    <span className="text-xs text-slate-500 block">Database</span>
                     <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                       Supabase PostgreSQL
                     </span>
@@ -275,9 +298,114 @@ export default function BatchOutreachModal({
 
                 <p className="mt-2 text-xs text-slate-600 leading-relaxed">
                   {pendingCount > 0 
-                    ? `Clicking the button below will immediately start automatic outreach to all ${pendingCount} remaining creators.`
+                    ? `Clicking the button below will start automatic outreach to all ${pendingCount} remaining creators.`
                     : 'All creators have received outreach emails! No pending creators remaining.'}
                 </p>
+              </div>
+
+              {/* SENDER IDENTITY / ROTATION SETTING */}
+              <div className="space-y-2">
+                <label className="block font-bold text-slate-700 text-[11px] flex items-center justify-between">
+                  <span className="flex items-center space-x-1.5">
+                    <Repeat className="h-3.5 w-3.5 text-violet-600" />
+                    <span>Sender Identity & Domain Rotation</span>
+                  </span>
+                  <span className="text-[10px] text-violet-600 font-semibold bg-violet-50 px-2 py-0.5 rounded-full border border-violet-200">
+                    5 Emails / Rotation
+                  </span>
+                </label>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSenderMode('rotate')}
+                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                      senderMode === 'rotate'
+                        ? 'border-violet-600 bg-violet-50/80 text-violet-900 font-bold shadow-sm'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-1.5 mb-0.5">
+                      <Repeat className="h-3.5 w-3.5 text-violet-600" />
+                      <span className="font-bold">Auto-Rotate (5 per domain)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-normal block truncate">
+                      Rotates between .info & .online accounts
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSenderMode('sender_1')}
+                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                      senderMode === 'sender_1'
+                        ? 'border-violet-600 bg-violet-50/80 text-violet-900 font-bold shadow-sm'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-1.5 mb-0.5">
+                      <Mail className="h-3.5 w-3.5 text-indigo-600" />
+                      <span className="font-bold">Account 1 (partnerships@)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-normal block truncate">
+                      makeable.info only
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSenderMode('sender_2')}
+                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                      senderMode === 'sender_2'
+                        ? 'border-violet-600 bg-violet-50/80 text-violet-900 font-bold shadow-sm'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-1.5 mb-0.5">
+                      <Mail className="h-3.5 w-3.5 text-emerald-600" />
+                      <span className="font-bold">Account 2 (collab@)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-normal block truncate">
+                      makeable.online only
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSenderMode('custom')}
+                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                      senderMode === 'custom'
+                        ? 'border-violet-600 bg-violet-50/80 text-violet-900 font-bold shadow-sm'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-1.5 mb-0.5">
+                      <Settings2 className="h-3.5 w-3.5 text-amber-600" />
+                      <span className="font-bold">Custom Sender Email</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-normal block truncate">
+                      Specify manual from email
+                    </span>
+                  </button>
+                </div>
+
+                {/* Custom Email Input */}
+                {senderMode === 'custom' && (
+                  <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2 mt-2">
+                    <div>
+                      <label className="block font-bold text-amber-900 text-[10px] mb-1">
+                        From Email Address
+                      </label>
+                      <input
+                        type="email"
+                        placeholder="outreach@makeable.nyc"
+                        value={customSenderEmail}
+                        onChange={(e) => setCustomSenderEmail(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-white border border-amber-200 rounded-lg text-slate-900 font-medium text-xs focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Mode Selection */}
