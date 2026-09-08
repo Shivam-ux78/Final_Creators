@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, CheckCircle2, AlertCircle, Zap, ShieldCheck, RefreshCw, Square, Terminal, Sparkles, Send, Repeat, Mail, Settings2 } from 'lucide-react';
+import { X, Play, CheckCircle2, AlertCircle, Zap, ShieldCheck, RefreshCw, Square, Terminal, Sparkles, Send, Repeat, Mail, Settings2, Clock, Timer, Hourglass } from 'lucide-react';
 
 interface BatchOutreachModalProps {
   isOpen: boolean;
@@ -29,10 +29,25 @@ export default function BatchOutreachModal({
   const [customSenderName, setCustomSenderName] = useState('MakeAble Partnerships');
   const [configuredSenders, setConfiguredSenders] = useState<Array<{ id: string; label: string; senderEmail: string }>>([]);
 
+  // Recurring Interval Cooldown State
+  const [enableIntervalCycles, setEnableIntervalCycles] = useState(true);
+  const [burstSize, setBurstSize] = useState(10); // 5 per domain = 10 total per burst
+  const [cooldownMinutes, setCooldownMinutes] = useState(30); // 30 min cooldown between bursts
+
   const [isRunning, setIsRunning] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
-  const [progress, setProgress] = useState<{ total: number; sent: number; failed?: number; currentCreator?: string; currentSender?: string } | null>(null);
+  const [progress, setProgress] = useState<{
+    total: number;
+    sent: number;
+    failed?: number;
+    currentCreator?: string;
+    currentSender?: string;
+    isCooldown?: boolean;
+    nextCycleAt?: string | null;
+    currentCycle?: number;
+    totalCycles?: number;
+  } | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [recentLogs, setRecentLogs] = useState<Array<{ time: string; message: string; success: boolean; sender?: string }>>([]);
   
@@ -51,7 +66,11 @@ export default function BatchOutreachModal({
           sent: data.sent || 0,
           failed: data.failed || 0,
           currentCreator: data.currentCreator || '',
-          currentSender: data.currentSender || ''
+          currentSender: data.currentSender || '',
+          isCooldown: Boolean(data.isCooldown),
+          nextCycleAt: data.nextCycleAt || null,
+          currentCycle: data.currentCycle || 1,
+          totalCycles: data.totalCycles || 1
         });
 
         if (Array.isArray(data.senders) && data.senders.length > 0) {
@@ -99,21 +118,24 @@ export default function BatchOutreachModal({
   const handleStartBatch = async () => {
     setIsStarting(true);
     setIsRunning(true);
-    setStatusMessage(`Starting automated outreach for ${sendAll ? 'all' : targetCount} pending creators...`);
+    setStatusMessage(`Starting automated outreach engine...`);
 
     try {
       const res = await fetch('/api/automated-outreach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          limit: sendAll ? 0 : targetCount, // 0 = send all pending
+          limit: sendAll ? 0 : targetCount,
           minSleepSeconds: minSleep,
           maxSleepSeconds: maxSleep,
           dryRun,
           senderMode,
           customSenderEmail,
           customSenderName,
-          rotationInterval
+          rotationInterval,
+          enableIntervalCycles,
+          burstSize,
+          cooldownMinutes
         })
       });
 
@@ -171,12 +193,12 @@ export default function BatchOutreachModal({
                 {isRunning && (
                   <span className="flex items-center space-x-1.5 px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200 animate-pulse">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-600"></span>
-                    <span>Sending in Background</span>
+                    <span>{progress?.isCooldown ? 'Interval Cooldown' : 'Sending in Background'}</span>
                   </span>
                 )}
               </div>
               <p className="text-xs text-slate-500">
-                100% automatic — multi-domain rotation & background execution
+                100% automated — 5/domain rotation & scheduled recurring burst cycles
               </p>
             </div>
           </div>
@@ -191,29 +213,31 @@ export default function BatchOutreachModal({
         {/* Modal Content */}
         <div className="p-6 overflow-y-auto space-y-4 flex-1 text-xs">
           
-          {/* Background Persistence Banner */}
-          <div className="p-3 bg-violet-50/80 border border-violet-200 rounded-xl flex items-start space-x-2.5 text-violet-900">
-            <ShieldCheck className="h-4 w-4 text-violet-600 shrink-0 mt-0.5" />
-            <div className="leading-relaxed">
-              <span className="font-bold block">Multi-Domain Anti-Spam Rotation:</span>
-              <span className="text-slate-600 text-[11px]">
-                Rotates senders every 5 emails between your verified Resend accounts to maximize deliverability and avoid rate limits. Runs continuously in background.
-              </span>
-            </div>
-          </div>
-
           {/* Active Running State Display */}
           {isRunning ? (
             <div className="space-y-3">
               <div className="p-4 bg-slate-900 text-white rounded-xl space-y-3 shadow-lg">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <RefreshCw className="h-4 w-4 animate-spin text-violet-400" />
-                    <span className="font-bold text-sm text-slate-100">Live Auto Outreach In Progress</span>
+                    {progress?.isCooldown ? (
+                      <Hourglass className="h-4 w-4 text-amber-400 animate-pulse" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 animate-spin text-violet-400" />
+                    )}
+                    <span className="font-bold text-sm text-slate-100">
+                      {progress?.isCooldown ? 'Interval Cooldown Active' : 'Live Auto Outreach In Progress'}
+                    </span>
                   </div>
-                  <span className="font-mono text-xs text-emerald-400 font-bold">
-                    {progress?.sent || 0} / {progress?.total || targetCount} Sent
-                  </span>
+                  <div className="text-right">
+                    <span className="font-mono text-xs text-emerald-400 font-bold block">
+                      {progress?.sent || 0} / {progress?.total || targetCount} Sent
+                    </span>
+                    {progress?.totalCycles && progress.totalCycles > 1 && (
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        Cycle {progress.currentCycle || 1} of {progress.totalCycles}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Progress Bar */}
@@ -408,10 +432,89 @@ export default function BatchOutreachModal({
                 )}
               </div>
 
+              {/* RECURRING INTERVAL / COOLDOWN BURST SETTING */}
+              <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Clock className="h-4 w-4 text-indigo-600" />
+                    <div>
+                      <span className="font-bold text-slate-900 text-xs block">Scheduled Interval Burst Engine</span>
+                      <span className="text-[10px] text-slate-500">Send 5 from each domain, pause, and auto-restart</span>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enableIntervalCycles}
+                      onChange={(e) => setEnableIntervalCycles(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+
+                {enableIntervalCycles && (
+                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-indigo-100">
+                    <div>
+                      <label className="block font-bold text-indigo-950 text-[10px] mb-1">
+                        Emails Per Burst Cycle
+                      </label>
+                      <div className="flex items-center space-x-1.5">
+                        <input
+                          type="number"
+                          min={2}
+                          max={50}
+                          value={burstSize}
+                          onChange={(e) => setBurstSize(parseInt(e.target.value) || 10)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-indigo-200 rounded-lg text-slate-900 font-bold text-xs"
+                        />
+                        <span className="text-[10px] text-slate-500 font-semibold shrink-0">emails</span>
+                      </div>
+                      <span className="text-[9px] text-indigo-600 block mt-0.5">
+                        ({Math.round(burstSize / 2)} from Account 1, {Math.round(burstSize / 2)} from Account 2)
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-indigo-950 text-[10px] mb-1">
+                        Cooldown Pause Time
+                      </label>
+                      <div className="flex items-center space-x-1.5">
+                        <input
+                          type="number"
+                          min={5}
+                          max={360}
+                          value={cooldownMinutes}
+                          onChange={(e) => setCooldownMinutes(parseInt(e.target.value) || 30)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-indigo-200 rounded-lg text-slate-900 font-bold text-xs"
+                        />
+                        <span className="text-[10px] text-slate-500 font-semibold shrink-0">min</span>
+                      </div>
+                      <div className="flex items-center space-x-1 mt-1">
+                        {[15, 30, 60].map((mins) => (
+                          <button
+                            key={mins}
+                            type="button"
+                            onClick={() => setCooldownMinutes(mins)}
+                            className={`px-1.5 py-0.5 text-[9px] font-bold rounded ${
+                              cooldownMinutes === mins
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50'
+                            }`}
+                          >
+                            {mins}m
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Mode Selection */}
               <div className="space-y-2">
                 <label className="block font-bold text-slate-700 text-[11px]">
-                  Outreach Scope
+                  Total Outreach Scope
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -427,7 +530,7 @@ export default function BatchOutreachModal({
                       <Zap className="h-4 w-4 text-violet-600" />
                       <span className="font-bold">All Pending ({pendingCount})</span>
                     </div>
-                    <span className="text-[10px] text-slate-500 font-normal">Auto-send to everyone pending</span>
+                    <span className="text-[10px] text-slate-500 font-normal">Auto-send across recurring cycles</span>
                   </button>
 
                   <button
@@ -441,18 +544,18 @@ export default function BatchOutreachModal({
                   >
                     <div className="flex items-center space-x-1.5 mb-1">
                       <Send className="h-4 w-4 text-indigo-600" />
-                      <span className="font-bold">Custom Batch Size</span>
+                      <span className="font-bold">Custom Total Limit</span>
                     </div>
-                    <span className="text-[10px] text-slate-500 font-normal">Set custom number of emails</span>
+                    <span className="text-[10px] text-slate-500 font-normal">Cap maximum total emails</span>
                   </button>
                 </div>
               </div>
 
-              {/* Custom Batch Size Input (if selected) */}
+              {/* Custom Total Limit (if selected) */}
               {!sendAll && (
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
                   <label className="block font-bold text-slate-700 mb-1 text-[11px]">
-                    Number of Emails to Send
+                    Total Number of Emails to Send
                   </label>
                   <input
                     type="number"
@@ -465,11 +568,11 @@ export default function BatchOutreachModal({
                 </div>
               )}
 
-              {/* Anti-Spam Pacing */}
+              {/* Anti-Spam Pacing Delay Between Emails */}
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
                 <div>
-                  <span className="font-bold text-slate-800 text-[11px] block">Anti-Spam Pacing Delay</span>
-                  <span className="text-[10px] text-slate-500">Human-like delay between each email</span>
+                  <span className="font-bold text-slate-800 text-[11px] block">Delay Between Each Email</span>
+                  <span className="text-[10px] text-slate-500">Human-like spacing inside each burst</span>
                 </div>
                 <div className="flex items-center space-x-1.5">
                   <input
@@ -538,7 +641,7 @@ export default function BatchOutreachModal({
                   ? 'Starting Engine...' 
                   : pendingCount === 0 
                   ? 'All Emails Sent' 
-                  : `Start Auto Outreach (${sendAll ? 'All ' + pendingCount : targetCount} Creators)`}
+                  : `Start Scheduled Outreach (${enableIntervalCycles ? `${burstSize} / ${cooldownMinutes}m` : (sendAll ? 'All ' + pendingCount : targetCount)})`}
               </span>
             </button>
           )}

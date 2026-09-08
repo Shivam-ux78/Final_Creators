@@ -64,6 +64,10 @@ function getBatchState() {
   }
   return {
     isRunning: false,
+    isCooldown: false,
+    nextCycleAt: null,
+    currentCycle: 1,
+    totalCycles: 1,
     total: 0,
     sent: 0,
     failed: 0,
@@ -87,8 +91,23 @@ function saveBatchState(state: any) {
   }
 }
 
-// Sleep helper function in Node.js
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// Sleep helper function with stop checking
+async function sleepWithCheck(ms: number, updateCallback?: (remainingSec: number) => void): Promise<boolean> {
+  const step = 1000;
+  let elapsed = 0;
+  while (elapsed < ms) {
+    const currentState = getBatchState();
+    if (currentState.shouldStop) {
+      return false; // User requested stop
+    }
+    await new Promise((resolve) => setTimeout(resolve, step));
+    elapsed += step;
+    if (updateCallback) {
+      updateCallback(Math.round((ms - elapsed) / 1000));
+    }
+  }
+  return true;
+}
 
 // Background Worker execution runner
 async function runBackgroundBatch(options: {
@@ -98,10 +117,13 @@ async function runBackgroundBatch(options: {
   dryRun: boolean;
   commissionRate: string;
   buyerDiscount: string;
-  senderMode: string; // 'rotate' | 'sender_1' | 'sender_2' | 'custom'
+  senderMode: string;
   customSenderEmail?: string;
   customSenderName?: string;
-  rotationInterval?: number; // default 5 emails per rotation
+  rotationInterval?: number; // 5 per domain
+  enableIntervalCycles?: boolean;
+  burstSize?: number; // e.g. 10 emails (5 from each of 2 domains)
+  cooldownMinutes?: number; // e.g. 30 minutes
 }) {
   const {
     limit,
@@ -113,7 +135,10 @@ async function runBackgroundBatch(options: {
     senderMode = 'rotate',
     customSenderEmail,
     customSenderName,
-    rotationInterval = 5
+    rotationInterval = 5,
+    enableIntervalCycles = false,
+    burstSize = 10,
+    cooldownMinutes = 30
   } = options;
 
   const replyTo = process.env.REPLY_TO_EMAIL || 'support@makeable.nyc';
@@ -132,6 +157,7 @@ async function runBackgroundBatch(options: {
 
     if (pendingCreators.length === 0) {
       state.isRunning = false;
+      state.isCooldown = false;
       state.total = 0;
       state.sent = 0;
       state.statusMessage = 'All creators have already been emailed! No pending outreach left.';
@@ -139,12 +165,17 @@ async function runBackgroundBatch(options: {
       return;
     }
 
+    const calculatedTotalCycles = enableIntervalCycles ? Math.ceil(pendingCreators.length / burstSize) : 1;
+
     state.total = pendingCreators.length;
     state.sent = 0;
     state.failed = 0;
     state.isRunning = true;
+    state.isCooldown = false;
+    state.currentCycle = 1;
+    state.totalCycles = calculatedTotalCycles;
     state.shouldStop = false;
-    state.statusMessage = `Processing batch of ${pendingCreators.length} creators in background...`;
+    state.statusMessage = `Starting outreach for ${pendingCreators.length} creators (Cycles: ${calculatedTotalCycles})...`;
     saveBatchState(state);
 
     let openai: OpenAI | null = null;
@@ -156,14 +187,18 @@ async function runBackgroundBatch(options: {
       }
     }
 
+    let burstCounter = 0;
+    let cycleNumber = 1;
+
     // 2. Main processing loop
     for (let i = 0; i < pendingCreators.length; i++) {
       // Re-read state to check for user stop signal
       state = getBatchState();
       if (state.shouldStop) {
         state.isRunning = false;
+        state.isCooldown = false;
         state.shouldStop = false;
-        state.statusMessage = `Batch stopped by user. Sent ${state.sent} / ${state.total} emails.`;
+        state.statusMessage = `Batch stopped by user. Sent ${state.sent} / ${state.total} emails across ${cycleNumber} cycle(s).`;
         saveBatchState(state);
         console.log('[Node Background Outreach] Batch stopped by user signal.');
         return;
@@ -182,7 +217,6 @@ async function runBackgroundBatch(options: {
       let activeApiKey = process.env.RESEND_API_KEY || '';
 
       if (senderMode === 'rotate' && accounts.length > 0) {
-        // Rotate every N emails (default: 5)
         const accountIdx = Math.floor(i / rotationInterval) % accounts.length;
         const selected = accounts[accountIdx];
         activeSenderName = selected.senderName;
@@ -200,7 +234,6 @@ async function runBackgroundBatch(options: {
       } else if (senderMode === 'custom' && customSenderEmail) {
         activeSenderEmail = customSenderEmail.trim();
         activeSenderName = customSenderName?.trim() || process.env.SENDER_NAME || 'MakeAble Partnerships';
-        // Pick best matching account or default to account 1
         const matched = accounts.find(a => activeSenderEmail.endsWith(a.senderEmail.split('@')[1] || ''));
         activeApiKey = matched ? matched.apiKey : (accounts[0]?.apiKey || '');
       } else if (accounts.length > 0) {
@@ -211,7 +244,9 @@ async function runBackgroundBatch(options: {
 
       state.currentCreator = username;
       state.currentSender = activeSenderEmail;
-      state.statusMessage = `[${i + 1}/${pendingCreators.length}] Sending to @${username} via ${activeSenderEmail}...`;
+      state.currentCycle = cycleNumber;
+      state.isCooldown = false;
+      state.statusMessage = `[${i + 1}/${pendingCreators.length}] Sending to @${username} via ${activeSenderEmail} (Burst ${burstCounter + 1}/${burstSize})...`;
       saveBatchState(state);
 
       let subject = '';
@@ -326,7 +361,7 @@ https://makeable.nyc`
         body = bodyTemplates[hash % bodyTemplates.length];
       }
 
-      // C. Dispatch via Resend (using the designated rotated client)
+      // C. Dispatch via Resend
       let sentSuccess = false;
       let logEntry = '';
 
@@ -363,7 +398,7 @@ https://makeable.nyc`
 
           if (resendData.data?.id) {
             sentSuccess = true;
-            logEntry = `✓ Sent to @${username} (${toEmail}) via [${activeSenderEmail}]`;
+            logEntry = `✓ Sent to @${username} (${toEmail}) via [${activeSenderEmail}] (Cycle ${cycleNumber})`;
           } else {
             logEntry = `✗ Failed sending to @${username} via [${activeSenderEmail}]: ${resendData.error?.message || 'Unknown error'}`;
           }
@@ -375,9 +410,9 @@ https://makeable.nyc`
         logEntry = `✗ No valid Resend API key configured for ${activeSenderEmail}`;
       }
 
-      const nowIso = new Date().toISOString();
       if (sentSuccess) {
         state.sent += 1;
+        burstCounter += 1;
         if (!dryRun) {
           await recordEmailSent({
             username: username || '',
@@ -396,23 +431,70 @@ https://makeable.nyc`
       ];
       saveBatchState(state);
 
-      // D. Sleep with anti-spam jitter between each email
+      // Check if more emails remain
       if (i < pendingCreators.length - 1) {
-        const sleepSeconds = Math.floor(Math.random() * (maxSleepSeconds - minSleepSeconds + 1)) + minSleepSeconds;
-        state.statusMessage = `Pacing delay (${sleepSeconds}s anti-spam sleep) before next creator...`;
-        saveBatchState(state);
-        console.log(`[Node Background Outreach] Sleeping ${sleepSeconds}s before next email...`);
-        await sleep(sleepSeconds * 1000);
+        // D. Check if we just completed a BURST cycle
+        if (enableIntervalCycles && burstCounter >= burstSize) {
+          burstCounter = 0;
+          cycleNumber += 1;
+          const nextCycleDate = new Date(Date.now() + cooldownMinutes * 60 * 1000);
+          
+          state.isCooldown = true;
+          state.nextCycleAt = nextCycleDate.toISOString();
+          state.currentCycle = cycleNumber;
+          state.statusMessage = `Burst completed! Cooldown active: next cycle (${cycleNumber}/${calculatedTotalCycles}) starts in ${cooldownMinutes} min...`;
+          saveBatchState(state);
+
+          console.log(`[Interval Automation] Cooldown initiated. Sleeping ${cooldownMinutes} minutes until next burst cycle (${nextCycleDate.toLocaleTimeString()})...`);
+
+          const canContinue = await sleepWithCheck(cooldownMinutes * 60 * 1000, (remainingSec) => {
+            const mins = Math.floor(remainingSec / 60);
+            const secs = remainingSec % 60;
+            state = getBatchState();
+            state.statusMessage = `⏳ Interval cooldown: Next burst starts in ${mins}m ${secs < 10 ? '0' : ''}${secs}s (Cycle ${cycleNumber}/${calculatedTotalCycles})...`;
+            saveBatchState(state);
+          });
+
+          if (!canContinue) {
+            state.isRunning = false;
+            state.isCooldown = false;
+            state.statusMessage = `Outreach stopped by user during interval cooldown.`;
+            saveBatchState(state);
+            return;
+          }
+
+          state.isCooldown = false;
+          state.nextCycleAt = null;
+          state.statusMessage = `Resuming Cycle ${cycleNumber}/${calculatedTotalCycles}...`;
+          saveBatchState(state);
+
+        } else {
+          // Standard pacing delay between individual emails in a burst
+          const sleepSeconds = Math.floor(Math.random() * (maxSleepSeconds - minSleepSeconds + 1)) + minSleepSeconds;
+          state.statusMessage = `Pacing delay (${sleepSeconds}s anti-spam sleep) before next creator...`;
+          saveBatchState(state);
+          console.log(`[Node Background Outreach] Sleeping ${sleepSeconds}s before next email...`);
+          
+          const canContinue = await sleepWithCheck(sleepSeconds * 1000);
+          if (!canContinue) {
+            state.isRunning = false;
+            state.statusMessage = `Outreach stopped by user during pacing delay.`;
+            saveBatchState(state);
+            return;
+          }
+        }
       }
     }
 
     state.isRunning = false;
-    state.statusMessage = `Batch completed successfully! Dispatched ${state.sent} / ${state.total} outreach emails.`;
+    state.isCooldown = false;
+    state.statusMessage = `All outreach cycles completed! Dispatched ${state.sent} / ${state.total} outreach emails.`;
     saveBatchState(state);
 
   } catch (err: any) {
     console.error('Background batch execution error:', err);
     state.isRunning = false;
+    state.isCooldown = false;
     state.statusMessage = `Batch halted due to error: ${err.message}`;
     saveBatchState(state);
   }
@@ -438,6 +520,8 @@ export async function POST(req: Request) {
     if (body.action === 'stop') {
       const state = getBatchState();
       state.shouldStop = true;
+      state.isRunning = false;
+      state.isCooldown = false;
       state.statusMessage = 'Stopping batch after current task finishes...';
       saveBatchState(state);
       return NextResponse.json({
@@ -457,7 +541,10 @@ export async function POST(req: Request) {
       senderMode = 'rotate',
       customSenderEmail,
       customSenderName,
-      rotationInterval = 5
+      rotationInterval = 5,
+      enableIntervalCycles = false,
+      burstSize = 10,
+      cooldownMinutes = 30
     } = body;
 
     const currentState = getBatchState();
@@ -469,15 +556,23 @@ export async function POST(req: Request) {
       });
     }
 
+    const totalCycles = enableIntervalCycles ? Math.ceil(limit / burstSize) : 1;
+
     // Initialize state
     const newState = {
       isRunning: true,
+      isCooldown: false,
+      nextCycleAt: null,
+      currentCycle: 1,
+      totalCycles,
       total: limit,
       sent: 0,
       failed: 0,
       currentCreator: 'Initializing...',
       currentSender: '',
-      statusMessage: `Starting background batch for ${limit} creators (Mode: ${senderMode === 'rotate' ? 'Auto-Rotate 5/domain' : senderMode})...`,
+      statusMessage: enableIntervalCycles 
+        ? `Starting scheduled cycle engine: sending ${burstSize} emails every ${cooldownMinutes} min (${totalCycles} cycles)...`
+        : `Starting background batch for ${limit} creators (Mode: ${senderMode === 'rotate' ? 'Auto-Rotate 5/domain' : senderMode})...`,
       startedAt: new Date().toISOString(),
       lastUpdatedAt: new Date().toISOString(),
       recentLogs: [],
@@ -496,7 +591,10 @@ export async function POST(req: Request) {
       senderMode,
       customSenderEmail,
       customSenderName,
-      rotationInterval
+      rotationInterval,
+      enableIntervalCycles,
+      burstSize,
+      cooldownMinutes
     }).catch((e) => {
       console.error('Background runner unhandled exception:', e);
     });
