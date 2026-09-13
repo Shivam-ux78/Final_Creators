@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 const AUTH_COOKIE_NAME = 'makeable_auth_token';
@@ -11,11 +11,12 @@ const PUBLIC_PATHS = [
   '/api/auth/login',
   '/api/auth/logout',
   '/api/auth/status',
+  '/api/auth/sso',
   '/favicon.ico'
 ];
 
 export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const { pathname, searchParams } = request.nextUrl;
 
   // 1. Allow Next.js static files and internal paths
   if (
@@ -26,7 +27,23 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. Allow explicitly defined public routes
+  // 2. If an SSO token is provided in the query string, route to /api/auth/sso to verify & set session cookie
+  const ssoToken = searchParams.get('sso_token') || searchParams.get('token');
+  if (ssoToken && pathname !== '/api/auth/sso') {
+    const ssoUrl = new URL('/api/auth/sso', request.url);
+    ssoUrl.searchParams.set('token', ssoToken);
+    
+    // Preserve target redirect
+    const cleanUrl = new URL(pathname, request.url);
+    searchParams.forEach((v, k) => {
+      if (k !== 'sso_token' && k !== 'token') cleanUrl.searchParams.set(k, v);
+    });
+    ssoUrl.searchParams.set('redirect', cleanUrl.pathname + cleanUrl.search);
+    
+    return NextResponse.redirect(ssoUrl);
+  }
+
+  // 3. Allow explicitly defined public routes
   if (PUBLIC_PATHS.some(path => pathname === path || pathname.startsWith(path + '/'))) {
     // If user is already authenticated and visits /login, redirect to dashboard /
     if (pathname === '/login') {
@@ -38,7 +55,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 3. Protect all other pages and API endpoints
+  // 4. Protect all other pages and API endpoints
   const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
 
   if (!token || token.length < 20) {
