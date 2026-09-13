@@ -1,13 +1,22 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { verifySessionToken, createSessionToken, AUTH_COOKIE_NAME } from '../../../../lib/auth';
 
 export const dynamic = 'force-dynamic';
 
+function getPublicBaseUrl(req: Request): string {
+  const forwardedHost = req.headers.get('x-forwarded-host');
+  const host = forwardedHost || req.headers.get('host') || 'creators.makeable.nyc';
+  const proto = req.headers.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
+  return `${proto}://${host}`;
+}
+
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const token = searchParams.get('token') || searchParams.get('sso_token');
-    const redirectPath = searchParams.get('redirect') || '/';
+    const urlObj = new URL(req.url);
+    const token = urlObj.searchParams.get('token') || urlObj.searchParams.get('sso_token');
+    const redirectPath = urlObj.searchParams.get('redirect') || '/';
+
+    const baseUrl = getPublicBaseUrl(req);
 
     if (!token) {
       return NextResponse.json(
@@ -19,13 +28,14 @@ export async function GET(req: Request) {
     const { valid, username } = verifySessionToken(token);
 
     if (!valid || !username) {
-      return NextResponse.redirect(new URL('/login?error=invalid_sso_session', req.url));
+      return NextResponse.redirect(new URL('/login?error=invalid_sso_session', baseUrl));
     }
 
     // Refresh token with standard session duration
     const sessionCookieToken = createSessionToken(username);
 
-    const redirectUrl = new URL(redirectPath, req.url);
+    const targetPath = redirectPath.startsWith('/') ? redirectPath : `/${redirectPath}`;
+    const redirectUrl = new URL(targetPath, baseUrl);
     const response = NextResponse.redirect(redirectUrl);
 
     // Set secure authentication cookie
@@ -42,8 +52,7 @@ export async function GET(req: Request) {
     return response;
   } catch (err: any) {
     console.error('SSO Handshake error:', err);
-    return NextResponse.redirect(new URL('/login?error=sso_server_error', req.url));
+    const baseUrl = getPublicBaseUrl(req);
+    return NextResponse.redirect(new URL('/login?error=sso_server_error', baseUrl));
   }
 }
-
-

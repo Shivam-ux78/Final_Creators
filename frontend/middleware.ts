@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 const AUTH_COOKIE_NAME = 'makeable_auth_token';
@@ -27,17 +27,17 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. If an SSO token is provided in the query string, route to /api/auth/sso to verify & set session cookie
+  // 2. If an SSO token is provided in the query string, route to /api/auth/sso using request.nextUrl.clone()
   const ssoToken = searchParams.get('sso_token') || searchParams.get('token');
   if (ssoToken && pathname !== '/api/auth/sso') {
-    const ssoUrl = new URL('/api/auth/sso', request.url);
+    const ssoUrl = request.nextUrl.clone();
+    ssoUrl.pathname = '/api/auth/sso';
     ssoUrl.searchParams.set('token', ssoToken);
     
     // Preserve target redirect
-    const cleanUrl = new URL(pathname, request.url);
-    searchParams.forEach((v, k) => {
-      if (k !== 'sso_token' && k !== 'token') cleanUrl.searchParams.set(k, v);
-    });
+    const cleanUrl = request.nextUrl.clone();
+    cleanUrl.searchParams.delete('sso_token');
+    cleanUrl.searchParams.delete('token');
     ssoUrl.searchParams.set('redirect', cleanUrl.pathname + cleanUrl.search);
     
     return NextResponse.redirect(ssoUrl);
@@ -49,7 +49,10 @@ export function middleware(request: NextRequest) {
     if (pathname === '/login') {
       const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
       if (token && token.length > 20) {
-        return NextResponse.redirect(new URL('/', request.url));
+        const dest = request.nextUrl.clone();
+        dest.pathname = '/';
+        dest.search = '';
+        return NextResponse.redirect(dest);
       }
     }
     return NextResponse.next();
@@ -68,7 +71,8 @@ export function middleware(request: NextRequest) {
     }
 
     // For Page routes, redirect to /login with redirect URL
-    const loginUrl = new URL('/login', request.url);
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = '/login';
     if (pathname !== '/') {
       loginUrl.searchParams.set('from', pathname);
     }
@@ -80,12 +84,6 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
     '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 };
