@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import { recordEmailSent } from '../../../lib/creators-storage';
@@ -51,8 +51,8 @@ export async function POST(req: Request) {
       // 1. Convert bold **text** to <strong>
       formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #0f172a; font-weight: 700;">$1</strong>');
       
-      // 2. Convert bullet markers (* , - , â€¢ ) into clean styled bullets
-      formatted = formatted.replace(/^[*\-â€¢]\s+/gm, '<span style="color: #6366f1; font-weight: bold; margin-right: 6px;">â€¢</span> ');
+      // 2. Convert bullet markers (* , - , • ) into clean styled bullets
+      formatted = formatted.replace(/^[*•\-]\s+/gm, '<span style="color: #6366f1; font-weight: bold; margin-right: 6px;">•</span> ');
       
       // 3. Convert *text* to <em>
       formatted = formatted.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');

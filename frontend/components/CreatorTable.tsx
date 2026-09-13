@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React from 'react';
 import { Mail, Sparkles, ExternalLink, Instagram, CheckCircle2, Clock3, Eye, Copy, Check } from 'lucide-react';
@@ -77,8 +77,8 @@ export default function CreatorTable({
                             {creator.name || creator.username}
                           </span>
                           {creator.is_verified && (
-                            <span className="h-3.5 w-3.5 bg-blue-500 text-white rounded-full flex items-center justify-center text-[8px] font-bold shrink-0" title="Instagram Verified">
-                              âœ“
+                            <span className="h-3.5 w-3.5 bg-blue-500 text-white rounded-full flex items-center justify-center shrink-0 shadow-sm" title="Instagram Verified">
+                              <Check className="h-2.5 w-2.5 stroke-[3]" />
                             </span>
                           )}
                         </div>

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect } from 'react';
 import { X, Sparkles, Send, RefreshCw, CheckCircle2, AlertCircle, Info, Percent, Gift, Tag } from 'lucide-react';
@@ -145,7 +145,7 @@ export default function EmailModal({
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                To: <span className="font-semibold text-slate-700">{creator.email}</span> â€¢ {creator.followers} followers â€¢ {creator.category}
+                To: <span className="font-semibold text-slate-700">{creator.email}</span> • {creator.followers} followers • {creator.category}
               </p>
             </div>
           </div>
@@ -244,7 +244,7 @@ export default function EmailModal({
             <span className="font-bold text-slate-700 block mb-1">Attached Signature:</span>
             <div className="text-[11px] space-y-0.5 font-mono text-slate-500">
               <div>{signature.senderName} ({signature.title || 'Lead'})</div>
-              <div>{signature.brandName} â€¢ {signature.website}</div>
+              <div>{signature.brandName} • {signature.website}</div>
               {signature.phone && <div>{signature.phone}</div>}
             </div>
           </div>

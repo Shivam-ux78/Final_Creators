@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Play, CheckCircle2, AlertCircle, Zap, ShieldCheck, RefreshCw, Square, Terminal, Sparkles, Send, Repeat, Mail, Settings2, Clock, Timer, Hourglass } from 'lucide-react';
@@ -198,7 +198,7 @@ export default function BatchOutreachModal({
                 )}
               </div>
               <p className="text-xs text-slate-500">
-                100% automated â€” 5/domain rotation & scheduled recurring burst cycles
+                100% automated — 5/domain rotation & scheduled recurring burst cycles
               </p>
             </div>
           </div>

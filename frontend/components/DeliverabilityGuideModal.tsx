@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React from 'react';
 import { X, ShieldCheck, CheckCircle2, AlertTriangle, Key, Globe, Server, Copy, Check } from 'lucide-react';
@@ -71,7 +71,7 @@ export default function DeliverabilityGuideModal({
             </h4>
             <ol className="list-decimal list-inside space-y-1.5 pl-2 text-slate-600">
               <li>Sign up for a free account at <a href="https://resend.com" target="_blank" rel="noreferrer" className="text-violet-600 font-bold hover:underline">resend.com</a>.</li>
-              <li>Go to <strong>Domains</strong> âž” Click <strong>Add Domain</strong> âž” Enter your GoDaddy domain (e.g. <code className="bg-slate-100 px-1 py-0.5 rounded font-mono">yourbrand.com</code>).</li>
+              <li>Go to <strong>Domains</strong> → Click <strong>Add Domain</strong> → Enter your GoDaddy domain (e.g. <code className="bg-slate-100 px-1 py-0.5 rounded font-mono">yourbrand.com</code>).</li>
               <li>Resend will show you 3 exact DNS records to paste into GoDaddy.</li>
             </ol>
           </div>
@@ -162,7 +162,7 @@ export default function DeliverabilityGuideModal({
             <ul className="list-disc list-inside space-y-1 pl-1 text-[11px] text-slate-600">
               <li>Always include personal bio references (our AI Pitch Generator does this automatically).</li>
               <li>Avoid generic spam triggers like "FREE CASH $$$", "ACT NOW", or all-caps subject lines.</li>
-              <li>Send up to 50â€“100 personalized pitches per day per domain to keep reputation pristine.</li>
+              <li>Send up to 50-100 personalized pitches per day per domain to keep reputation pristine.</li>
             </ul>
           </div>
 
