@@ -1,6 +1,6 @@
-'use client';
+﻿'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Lock, User, Eye, EyeOff, Sparkles, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
 
@@ -14,6 +14,32 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Auto-authenticate if sso_token is present in URL or received via postMessage handshake
+  useEffect(() => {
+    const ssoToken = searchParams.get('sso_token') || searchParams.get('token');
+    if (ssoToken) {
+      setIsLoading(true);
+      window.location.replace(`/api/auth/sso?token=${encodeURIComponent(ssoToken)}&redirect=${encodeURIComponent(from)}`);
+      return;
+    }
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'ADMIN_SSO_TOKEN' && event.data.token) {
+        setIsLoading(true);
+        window.location.replace(`/api/auth/sso?token=${encodeURIComponent(event.data.token)}&redirect=${encodeURIComponent(from)}`);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    // Request token from parent window if embedded in iframe
+    if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'REQUEST_ADMIN_SSO_TOKEN' }, '*');
+    }
+
+    return () => window.removeEventListener('message', handleMessage);
+  }, [searchParams, from]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,7 +172,7 @@ function LoginForm() {
             {isLoading ? (
               <>
                 <div className="h-3.5 w-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Authenticating...</span>
+                <span>Authenticating with Admin SSO...</span>
               </>
             ) : (
               <>
