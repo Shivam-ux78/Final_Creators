@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
-import { getAllCreators, recordEmailSent } from '@/lib/creators-storage';
-import { supabase } from '@/lib/supabase';
+﻿import { NextResponse } from 'next/server';
+import { getAllCreators, recordEmailSent } from '../../../lib/creators-storage';
+import { supabase } from '../../../lib/supabase';
 
 export async function GET(req: Request) {
   try {
@@ -111,3 +111,5 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
+

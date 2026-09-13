@@ -1,8 +1,8 @@
-'use client';
+﻿'use client';
 
 import React from 'react';
 import { Search, Calendar, Filter, ArrowUpDown, CheckCircle2, Clock3, RotateCcw } from 'lucide-react';
-import { FilterState } from '@/lib/types';
+import { FilterState } from '../lib/types';
 
 interface FiltersBarProps {
   filters: FilterState;
@@ -140,3 +140,5 @@ export default function FiltersBar({
     </div>
   );
 }
+
+

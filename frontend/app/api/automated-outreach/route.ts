@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import OpenAI from 'openai';
-import { supabase } from '@/lib/supabase';
-import { getAllCreators, recordEmailSent } from '@/lib/creators-storage';
+import { supabase } from '../../../lib/supabase';
+import { getAllCreators, recordEmailSent } from '../../../lib/creators-storage';
 import fs from 'fs';
 import path from 'path';
 
@@ -280,10 +280,10 @@ STRICT GUIDELINES:
    - Write like a real person reaching out 1-on-1, NOT a corporate bot.
    - Opening: Mention checking out their profile (@${username}) and mention specific aspects of their content or bio ("${bio || category}").
    - Offer: Clearly outline the 3 key perks using clean bold bullet points:
-     • **${commissionRate} Recurring Commission** on all sales made via your link/code.
-     • **${buyerDiscount} Audience Discount** code for your followers to save money.
-     • **100% Free Product Gifting Kit** shipped directly to you to test and feature.
-   - Call to Action: Low friction next step — ask them to reply with their shipping address to get their free package dispatched and affiliate portal set up.
+     â€¢ **${commissionRate} Recurring Commission** on all sales made via your link/code.
+     â€¢ **${buyerDiscount} Audience Discount** code for your followers to save money.
+     â€¢ **100% Free Product Gifting Kit** shipped directly to you to test and feature.
+   - Call to Action: Low friction next step â€” ask them to reply with their shipping address to get their free package dispatched and affiliate portal set up.
    - Sign-off:
      Warmly,
      ${activeSenderName}
@@ -313,11 +313,11 @@ Return STRICT JSON: {"subject": "...", "body": "..."}`;
       if (!subject || !body) {
         const hash = username.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
         const subjects = [
-          `15% commission + free gifting partnership offer 🎁`,
-          `Creator collab offer: 15% commission & free product box 🤝`,
-          `Loved your profile — exclusive partnership offer from MakeAble ✨`,
-          `Free gifting package + 15% affiliate partner offer 📦`,
-          `Exclusive creator collab: 15% commission + free products 🎁`
+          `15% commission + free gifting partnership offer ðŸŽ`,
+          `Creator collab offer: 15% commission & free product box ðŸ¤`,
+          `Loved your profile â€” exclusive partnership offer from MakeAble âœ¨`,
+          `Free gifting package + 15% affiliate partner offer ðŸ“¦`,
+          `Exclusive creator collab: 15% commission + free products ðŸŽ`
         ];
         subject = subjects[hash % subjects.length];
 
@@ -330,9 +330,9 @@ I was personally checking out your Instagram (@${username}) and our team at Make
 We would love to invite you into our **Exclusive Creator Partner Program** and send you a complimentary gifting package.
 
 Here is what we're offering:
-• **${commissionRate} Recurring Commission**: Earn ${commissionRate} on every product sold through your personalized link or discount code.
-• **${buyerDiscount} Follower Discount**: An exclusive discount code for your community so they save money on every order.
-• **100% Free Product Gifting Kit**: Shipped straight to your door to test, enjoy, and feature.
+â€¢ **${commissionRate} Recurring Commission**: Earn ${commissionRate} on every product sold through your personalized link or discount code.
+â€¢ **${buyerDiscount} Follower Discount**: An exclusive discount code for your community so they save money on every order.
+â€¢ **100% Free Product Gifting Kit**: Shipped straight to your door to test, enjoy, and feature.
 
 If you'd like to collaborate, simply reply with your shipping address and we'll get your free gifting box sent out and your affiliate portal activated immediately!
 
@@ -347,9 +347,9 @@ Hope you're having a great week! Our team at MakeAble has been following your jo
 We're currently onboarding select creators for our **Affiliate Collaboration Program** and would love to partner with you and send over a free product package.
 
 Here's how we partner:
-• **${commissionRate} Recurring Commission**: You earn a full ${commissionRate} on all sales driven through your personal creator link/code.
-• **${buyerDiscount} Community Discount**: A custom discount code for your audience to save on every purchase.
-• **Free Product Gifting**: We ship a complimentary gifting package directly to you — no upfront costs or strings attached.
+â€¢ **${commissionRate} Recurring Commission**: You earn a full ${commissionRate} on all sales driven through your personal creator link/code.
+â€¢ **${buyerDiscount} Community Discount**: A custom discount code for your audience to save on every purchase.
+â€¢ **Free Product Gifting**: We ship a complimentary gifting package directly to you â€” no upfront costs or strings attached.
 
 Would you be interested in joining? If so, reply with your best shipping address and we'll dispatch your package and log you into the partner dashboard!
 
@@ -373,7 +373,7 @@ https://makeable.nyc`
           const resendClient = new Resend(activeApiKey);
           let formatted = body;
           formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #0f172a; font-weight: 700;">$1</strong>');
-          formatted = formatted.replace(/^[*\-•]\s+/gm, '<span style="color: #6366f1; font-weight: bold; margin-right: 6px;">•</span> ');
+          formatted = formatted.replace(/^[*\-â€¢]\s+/gm, '<span style="color: #6366f1; font-weight: bold; margin-right: 6px;">â€¢</span> ');
           formatted = formatted.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color: #4f46e5; font-weight: 600; text-decoration: underline;">$1</a>');
 
           const paragraphs = formatted.split(/\n\n+/);
@@ -398,16 +398,16 @@ https://makeable.nyc`
 
           if (resendData.data?.id) {
             sentSuccess = true;
-            logEntry = `✓ Sent to @${username} (${toEmail}) via [${activeSenderEmail}] (Cycle ${cycleNumber})`;
+            logEntry = `âœ“ Sent to @${username} (${toEmail}) via [${activeSenderEmail}] (Cycle ${cycleNumber})`;
           } else {
-            logEntry = `✗ Failed sending to @${username} via [${activeSenderEmail}]: ${resendData.error?.message || 'Unknown error'}`;
+            logEntry = `âœ— Failed sending to @${username} via [${activeSenderEmail}]: ${resendData.error?.message || 'Unknown error'}`;
           }
         } catch (resendErr: any) {
-          logEntry = `✗ Error sending to @${username}: ${resendErr.message}`;
+          logEntry = `âœ— Error sending to @${username}: ${resendErr.message}`;
           console.error(`Resend error sending to ${toEmail}:`, resendErr);
         }
       } else {
-        logEntry = `✗ No valid Resend API key configured for ${activeSenderEmail}`;
+        logEntry = `âœ— No valid Resend API key configured for ${activeSenderEmail}`;
       }
 
       if (sentSuccess) {
@@ -451,7 +451,7 @@ https://makeable.nyc`
             const mins = Math.floor(remainingSec / 60);
             const secs = remainingSec % 60;
             state = getBatchState();
-            state.statusMessage = `⏳ Interval cooldown: Next burst starts in ${mins}m ${secs < 10 ? '0' : ''}${secs}s (Cycle ${cycleNumber}/${calculatedTotalCycles})...`;
+            state.statusMessage = `â³ Interval cooldown: Next burst starts in ${mins}m ${secs < 10 ? '0' : ''}${secs}s (Cycle ${cycleNumber}/${calculatedTotalCycles})...`;
             saveBatchState(state);
           });
 
@@ -613,3 +613,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+

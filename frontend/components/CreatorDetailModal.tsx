@@ -1,8 +1,8 @@
-'use client';
+﻿'use client';
 
 import React from 'react';
 import { X, Instagram, Mail, MapPin, Tag, Users, Sparkles, CheckCircle2, DollarSign, Star } from 'lucide-react';
-import { Creator } from '@/lib/types';
+import { Creator } from '../lib/types';
 
 interface CreatorDetailModalProps {
   creator: Creator | null;
@@ -171,3 +171,5 @@ export default function CreatorDetailModal({
     </div>
   );
 }
+
+

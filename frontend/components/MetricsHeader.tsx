@@ -1,8 +1,8 @@
-'use client';
+﻿'use client';
 
 import React from 'react';
 import { Users, MailCheck, Clock, CalendarDays, TrendingUp } from 'lucide-react';
-import { Creator } from '@/lib/types';
+import { Creator } from '../lib/types';
 
 interface MetricsHeaderProps {
   creators: Creator[];
@@ -107,3 +107,5 @@ export default function MetricsHeader({
     </div>
   );
 }
+
+

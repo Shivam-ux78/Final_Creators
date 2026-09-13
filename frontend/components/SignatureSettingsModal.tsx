@@ -1,8 +1,8 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import { X, Save, Settings, User, Building, Globe, Phone, FileSignature, CheckCircle2 } from 'lucide-react';
-import { EmailSignature } from '@/lib/types';
+import { EmailSignature } from '../lib/types';
 
 interface SignatureSettingsModalProps {
   isOpen: boolean;
@@ -187,3 +187,5 @@ export default function SignatureSettingsModal({
     </div>
   );
 }
+
+

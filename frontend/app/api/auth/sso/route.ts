@@ -1,5 +1,5 @@
 ﻿import { NextResponse } from 'next/server';
-import { verifySessionToken, createSessionToken, AUTH_COOKIE_NAME } from '@/lib/auth';
+import { verifySessionToken, createSessionToken, AUTH_COOKIE_NAME } from '../../../../lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,3 +45,5 @@ export async function GET(req: Request) {
     return NextResponse.redirect(new URL('/login?error=sso_server_error', req.url));
   }
 }
+
+

@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { verifySessionToken, AUTH_COOKIE_NAME } from '@/lib/auth';
+import { verifySessionToken, AUTH_COOKIE_NAME } from '../../../../lib/auth';
 
 export async function GET() {
   const cookieStore = cookies();
@@ -12,3 +12,5 @@ export async function GET() {
     username: result.username || null
   });
 }
+
+

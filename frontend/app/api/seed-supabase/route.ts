@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+﻿import { NextResponse } from 'next/server';
+import { supabase } from '../../../lib/supabase';
 import fs from 'fs';
 import path from 'path';
 
@@ -66,3 +66,5 @@ export async function POST() {
     );
   }
 }
+
+

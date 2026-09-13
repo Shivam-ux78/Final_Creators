@@ -1,16 +1,16 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import Navbar from '@/components/Navbar';
-import MetricsHeader from '@/components/MetricsHeader';
-import FiltersBar from '@/components/FiltersBar';
-import CreatorTable from '@/components/CreatorTable';
-import EmailModal from '@/components/EmailModal';
-import CreatorDetailModal from '@/components/CreatorDetailModal';
-import SignatureSettingsModal from '@/components/SignatureSettingsModal';
-import DeliverabilityGuideModal from '@/components/DeliverabilityGuideModal';
-import BatchOutreachModal from '@/components/BatchOutreachModal';
-import { Creator, EmailSignature, FilterState } from '@/lib/types';
+import Navbar from '../components/Navbar';
+import MetricsHeader from '../components/MetricsHeader';
+import FiltersBar from '../components/FiltersBar';
+import CreatorTable from '../components/CreatorTable';
+import EmailModal from '../components/EmailModal';
+import CreatorDetailModal from '../components/CreatorDetailModal';
+import SignatureSettingsModal from '../components/SignatureSettingsModal';
+import DeliverabilityGuideModal from '../components/DeliverabilityGuideModal';
+import BatchOutreachModal from '../components/BatchOutreachModal';
+import { Creator, EmailSignature, FilterState } from '../lib/types';
 import { Sparkles, RefreshCw, AlertCircle } from 'lucide-react';
 
 const DEFAULT_SIGNATURE: EmailSignature = {
@@ -290,7 +290,7 @@ export default function DashboardPage() {
               </span>
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-              Verified US consumer creators (5k–50k) with direct emails, automated AI pitches & custom-domain dispatch.
+              Verified US consumer creators (5kâ€“50k) with direct emails, automated AI pitches & custom-domain dispatch.
             </p>
           </div>
 
@@ -368,7 +368,7 @@ export default function DashboardPage() {
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>CreatorOutreach Platform • 292 Verified US Profiles (5k–50k Followers)</span>
+          <span>CreatorOutreach Platform â€¢ 292 Verified US Profiles (5kâ€“50k Followers)</span>
           <span className="text-slate-400">Powered by Next.js, Supabase, OpenAI & Free Domain Deliverability</span>
         </div>
       </footer>
@@ -422,3 +422,5 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+
