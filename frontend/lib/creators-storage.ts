@@ -70,16 +70,40 @@ export async function recordEmailSent(params: {
   }
 }
 
-// 3. Load all creators directly from Supabase
+// 3. Load all creators directly from Supabase with full pagination
 export async function getAllCreators() {
   try {
-    const { data, error } = await supabase
-      .from('creators')
-      .select('*')
-      .order('followers_num', { ascending: false });
+    let allCreators: any[] = [];
+    let from = 0;
+    const PAGE_SIZE = 1000;
 
-    if (!error && data) {
-      return { creators: data, isFromDb: true };
+    while (true) {
+      const { data, error } = await supabase
+        .from('creators')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        console.warn('Supabase query error in getAllCreators:', error);
+        break;
+      }
+
+      if (!data || data.length === 0) {
+        break;
+      }
+
+      allCreators = allCreators.concat(data);
+
+      if (data.length < PAGE_SIZE) {
+        break;
+      }
+
+      from += PAGE_SIZE;
+    }
+
+    if (allCreators.length > 0) {
+      return { creators: allCreators, isFromDb: true };
     }
   } catch (e) {
     console.warn('Supabase query error in getAllCreators:', e);
