@@ -34,7 +34,14 @@ US_STATE_CODES = {
     'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
 }
 
-NON_US_KEYWORDS = ['india', 'brazil', 'brasil', 'uk', 'london', 'canada', 'australia', 'nigeria', 'germany', 'france', 'spain', 'mexico', 'colombia', 'indonesia', 'philippines', 'pakistan']
+NON_US_KEYWORDS = [
+    'india', 'brazil', 'brasil', 'uk', 'london', 'manchester', 'england', 'scotland', 'wales', 'united kingdom',
+    'canada', 'vancouver', 'toronto', 'montreal', 'calgary', 'ottawa', 'edmonton', 'quebec', 'ontario', 'alberta', 'bc, ca',
+    'australia', 'sydney', 'melbourne', 'brisbane', 'perth', 'new zealand', 'auckland',
+    'nigeria', 'germany', 'berlin', 'munich', 'france', 'paris', 'spain', 'madrid', 'barcelona',
+    'mexico', 'colombia', 'indonesia', 'philippines', 'pakistan', 'italy', 'rome', 'milan',
+    'netherlands', 'amsterdam', 'dubai', 'uae', 'south africa', 'johannesburg', 'cape town'
+]
 
 def clean_email(email_str):
     if not email_str or '@' not in email_str:
@@ -69,11 +76,20 @@ def is_strictly_usa(location_str, bio_text):
     # Check for foreign country signals
     if any(k in text for k in NON_US_KEYWORDS):
         return False
-    # Check for US signals
-    if any(us_k in text for us_k in ['united states', 'usa', ', us', 'u.s.a.', 'nyc', 'los angeles', 'miami', 'california', 'texas', 'florida']):
+    # If location explicitly has foreign indicators
+    if location_str:
+        loc_low = location_str.lower().strip()
+        if loc_low.endswith(', ca') and not ('california' in text or 'usa' in text or 'ca, us' in text):
+            return False
+        if any(k in loc_low for k in NON_US_KEYWORDS):
+            return False
+        if any(us_sig in loc_low for us_sig in [', us', 'usa', 'united states', 'u.s.a.', 'u.s.']):
+            return True
+    # Check for US signals in bio/location
+    if any(us_k in text for us_k in ['united states', 'usa', ', us', 'u.s.a.', 'nyc', 'los angeles', 'miami', 'california', 'texas', 'florida', 'atlanta', 'chicago', 'austin', 'dallas', 'phoenix', 'seattle', 'denver', 'nashville', 'san diego', 'san antonio', 'san francisco', 'boston', 'las vegas', 'orlando', 'tampa', 'charlotte', 'portland', 'cleveland', 'minneapolis']):
         return True
     for code in US_STATE_CODES:
-        if f', {code.lower()}' in text or f' {code.lower()} ' in text or f'{code.lower()}, us' in text:
+        if f', {code.lower()}' in text or f' {code.lower()} ' in text or f'{code.lower()}, us' in text or f'{code.lower()}, usa' in text:
             return True
     return False
 

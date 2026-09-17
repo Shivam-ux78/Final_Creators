@@ -37,12 +37,12 @@ def parse_collabstr_card(card_element):
     package_offer = ""
     
     for t in clean_texts:
-        if re.match(r'^\d+(\.\d+)?k$', t.lower()):
-            followers_str = t
-            try:
-                followers_num = int(float(t.lower().replace('k', '')) * 1000)
-            except:
-                pass
+        m = re.search(r'(\d+(?:\.\d+)?)\s*([km])\b', t.lower())
+        if m:
+            val = float(m.group(1))
+            unit = m.group(2)
+            followers_str = f"{val}{unit.upper()}"
+            followers_num = int(val * 1000000 if unit == 'm' else val * 1000)
             break
             
     price_matches = [t for t in clean_texts if t.startswith('$')]
