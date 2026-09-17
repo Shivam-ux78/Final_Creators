@@ -25,6 +25,7 @@ env/
 venv/
 ENV/
 .venv/
+.py
 
 # Logs & Runtime
 npm-debug.log*
