@@ -6,8 +6,11 @@ from curl_cffi import requests as cureq
 from config.settings import DEFAULT_HEADERS
 from utils.email_extractor import extract_first_email, extract_phones
 
-EMAIL_REGEX = re.compile(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+')
-INVALID_EMAILS = {'example.com', 'domain.com', 'email.com', 'yourdomain.com', 'test.com', 'sentry.io', 'wixpress.com'}
+EMAIL_REGEX = re.compile(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,8}')
+INVALID_EMAILS = {
+    'example.com', 'domain.com', 'email.com', 'yourdomain.com', 'test.com', 
+    'sentry.io', 'wixpress.com', 'jsdelivr.net', 'unpkg.com', 'cloudflare.com', 'github.com'
+}
 
 def clean_email(email_str):
     if not email_str or '@' not in email_str:
@@ -16,8 +19,22 @@ def clean_email(email_str):
     if not matches:
         return ""
     cand = matches[0].lower().strip('.').strip()
-    domain = cand.split('@')[-1]
+    if any(bad in cand for bad in ['chart.js', 'swiper', 'bootstrap', 'jquery', 'react', 'npm@', 'cdnjs']):
+        return ""
+    parts = cand.split('@')
+    if len(parts) != 2:
+        return ""
+    local, domain = parts
+    if '.' not in domain:
+        return ""
+    tld = domain.split('.')[-1]
+    if not tld.isalpha() or len(tld) < 2 or len(tld) > 8:
+        return ""
+    if any(ext in local for ext in ['.js', '.css', '.min', '.json', '.svg', '.png', '.jpg']):
+        return ""
     if domain in INVALID_EMAILS or len(domain) < 4:
+        return ""
+    if any(term in domain for term in ['sentry', 'wixpress', 'schema.org', 'w3.org']):
         return ""
     return cand
 
