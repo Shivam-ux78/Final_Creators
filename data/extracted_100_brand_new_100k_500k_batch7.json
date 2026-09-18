@@ -1271,5 +1271,43 @@
     "external_url": "https://hoo.be/rosefittt",
     "email_status": "not_sent",
     "created_at": "2026-09-18T13:12:04Z"
+  },
+  {
+    "username": "mandanazarghami",
+    "name": "Mandana Zarghami",
+    "email": "mandanazarghami1@gmail.com",
+    "phone": "",
+    "followers": "136K",
+    "followers_num": 135700,
+    "category": "Celebrity & Public Figure",
+    "location": "Miami, FL, US",
+    "biography": "Miami Lifestyle Creator",
+    "instagram_url": "https://www.instagram.com/mandanazarghami",
+    "is_verified": true,
+    "price": "$1,500",
+    "rating": "5.0",
+    "package_offer": "1 Instagram Photo Feed Post",
+    "external_url": "https://hoo.be/mandanazarghami",
+    "email_status": "not_sent",
+    "created_at": "2026-09-18T13:16:21Z"
+  },
+  {
+    "username": "kwin",
+    "name": "Cat",
+    "email": "kwinandre@gmail.com",
+    "phone": "",
+    "followers": "104K",
+    "followers_num": 103600,
+    "category": "Music & Dance",
+    "location": "Miami, FL, US",
+    "biography": "Entertainment, artist, lifestyle",
+    "instagram_url": "https://www.instagram.com/kwin",
+    "is_verified": true,
+    "price": "$100",
+    "rating": "5.0",
+    "package_offer": "1 Instagram Story",
+    "external_url": "https://taplink.cc/kwin",
+    "email_status": "not_sent",
+    "created_at": "2026-09-18T13:16:28Z"
   }
 ]

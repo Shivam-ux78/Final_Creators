@@ -52,7 +52,7 @@ def lookup_creatordb(username: str) -> dict:
     }
 
     try:
-        r = cureq.get(url, headers=headers, impersonate="chrome120", timeout=10)
+        r = requests.get(url, headers=headers, timeout=5)
         if r.status_code == 200:
             data = r.json()
             email = clean_email(data.get("email") or data.get("business_email", ""))
@@ -64,7 +64,7 @@ def lookup_creatordb(username: str) -> dict:
                 "name": data.get("name") or data.get("full_name", ""),
                 "source": "CreatorDB"
             }
-    except Exception as e:
+    except Exception:
         pass
 
     return {}
@@ -79,7 +79,7 @@ def extract_from_external_link(url: str) -> str:
         if any(skip in url.lower() for skip in ["instagram.com", "tiktok.com", "youtube.com", "facebook.com", "twitter.com", "x.com"]):
             return ""
         
-        r = cureq.get(url, headers=DEFAULT_HEADERS, impersonate="chrome120", timeout=8)
+        r = requests.get(url, headers=DEFAULT_HEADERS, timeout=4)
         if r.status_code == 200:
             em = extract_first_email(r.text)
             if em:
