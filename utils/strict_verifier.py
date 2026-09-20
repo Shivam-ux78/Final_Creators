@@ -72,26 +72,19 @@ def parse_num(f_str):
     except: return 0
 
 def is_strictly_usa(location_str, bio_text):
-    text = (location_str + " " + bio_text).lower()
-    # Check for foreign country signals
+    text = ((location_str or '') + " " + (bio_text or '')).lower().strip()
     if any(k in text for k in NON_US_KEYWORDS):
         return False
-    # If location explicitly has foreign indicators
-    if location_str:
-        loc_low = location_str.lower().strip()
-        if loc_low.endswith(', ca') and not ('california' in text or 'usa' in text or 'ca, us' in text):
-            return False
-        if any(k in loc_low for k in NON_US_KEYWORDS):
-            return False
-        if any(us_sig in loc_low for us_sig in [', us', 'usa', 'united states', 'u.s.a.', 'u.s.']):
-            return True
-    # Check for US signals in bio/location
-    if any(us_k in text for us_k in ['united states', 'usa', ', us', 'u.s.a.', 'nyc', 'los angeles', 'miami', 'california', 'texas', 'florida', 'atlanta', 'chicago', 'austin', 'dallas', 'phoenix', 'seattle', 'denver', 'nashville', 'san diego', 'san antonio', 'san francisco', 'boston', 'las vegas', 'orlando', 'tampa', 'charlotte', 'portland', 'cleveland', 'minneapolis']):
+    loc_low = (location_str or '').lower().strip()
+    if loc_low in ['us', 'usa', 'united states', 'u.s.a.', 'u.s.']:
+        return True
+    if any(us_sig in text for us_sig in ['united states', 'usa', 'us', 'u.s.a.', 'u.s.', 'nyc', 'new york', 'los angeles', 'miami', 'california', 'texas', 'florida', 'atlanta', 'chicago', 'austin', 'dallas', 'phoenix', 'seattle', 'denver', 'nashville', 'san diego', 'san antonio', 'san francisco', 'boston', 'las vegas', 'orlando', 'tampa', 'charlotte', 'portland', 'cleveland', 'minneapolis']):
         return True
     for code in US_STATE_CODES:
         if f', {code.lower()}' in text or f' {code.lower()} ' in text or f'{code.lower()}, us' in text or f'{code.lower()}, usa' in text:
             return True
-    return False
+    return True
+
 
 def extract_from_external_link(url: str) -> str:
     if not url or not url.startswith("http"):

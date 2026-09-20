@@ -9,7 +9,7 @@ import path from 'path';
 // Persistent State file path
 const STATE_FILE = path.join(process.cwd(), '.batch_outreach_state.json');
 
-// Helper to get all configured Resend accounts
+// Helper to get all configured Resend accounts (Targeting .work, .website, .online under RESEND_API_KEY_2)
 export function getConfiguredSenders() {
   const accounts: Array<{
     id: string;
@@ -19,33 +19,31 @@ export function getConfiguredSenders() {
     label: string;
   }> = [];
 
-  if (process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.startsWith('re_')) {
+  const apiKey2 = process.env.RESEND_API_KEY_2 || process.env.RESEND_API_KEY || '';
+
+  if (apiKey2 && apiKey2.startsWith('re_')) {
     accounts.push({
-      id: 'sender_1',
-      apiKey: process.env.RESEND_API_KEY,
+      id: 'sender_work',
+      apiKey: apiKey2,
       senderName: process.env.SENDER_NAME || 'MakeAble Partnerships',
-      senderEmail: process.env.SENDER_EMAIL || 'partnerships@makeable.info',
-      label: `${process.env.SENDER_NAME || 'MakeAble Partnerships'} (${process.env.SENDER_EMAIL || 'partnerships@makeable.info'})`
+      senderEmail: 'collab@makeable.work',
+      label: 'MakeAble Partnerships (collab@makeable.work)'
     });
-  }
 
-  if (process.env.RESEND_API_KEY_2 && process.env.RESEND_API_KEY_2.startsWith('re_')) {
     accounts.push({
-      id: 'sender_2',
-      apiKey: process.env.RESEND_API_KEY_2,
-      senderName: process.env.SENDER_NAME_2 || process.env.SENDER_NAME || 'MakeAble Partnerships',
-      senderEmail: process.env.SENDER_EMAIL_2 || 'collab@makeable.online',
-      label: `${process.env.SENDER_NAME_2 || 'MakeAble Partnerships'} (${process.env.SENDER_EMAIL_2 || 'collab@makeable.online'})`
+      id: 'sender_website',
+      apiKey: apiKey2,
+      senderName: process.env.SENDER_NAME || 'MakeAble Partnerships',
+      senderEmail: 'collab@makeable.website',
+      label: 'MakeAble Partnerships (collab@makeable.website)'
     });
-  }
 
-  if (process.env.RESEND_API_KEY_3 && process.env.RESEND_API_KEY_3.startsWith('re_')) {
     accounts.push({
-      id: 'sender_3',
-      apiKey: process.env.RESEND_API_KEY_3,
-      senderName: process.env.SENDER_NAME_3 || process.env.SENDER_NAME || 'MakeAble Partnerships',
-      senderEmail: process.env.SENDER_EMAIL_3 || 'support@makeable.website',
-      label: `${process.env.SENDER_NAME_3 || 'MakeAble Partnerships'} (${process.env.SENDER_EMAIL_3 || 'support@makeable.website'})`
+      id: 'sender_online',
+      apiKey: apiKey2,
+      senderName: process.env.SENDER_NAME || 'MakeAble Partnerships',
+      senderEmail: 'collab@makeable.online',
+      label: 'MakeAble Partnerships (collab@makeable.online)'
     });
   }
 

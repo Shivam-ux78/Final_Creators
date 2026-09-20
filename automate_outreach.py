@@ -1,15 +1,32 @@
 """
 =============================================================================
-AUTOMATED CREATOR OUTREACH RUNNER WITH MULTI-RESEND SENDER ROTATION
+AUTOMATED CREATOR OUTREACH ENGINE WITH 3-DOMAIN ROTATION & WARMUP BATCHING
 =============================================================================
-Features:
-1. Multi-Resend Account Rotation:
-   - Account 1: partnerships@makeable.info
-   - Account 2: collab@makeable.online
-   - Rotates sender every 5 emails (5 from Account 1, next 5 from Account 2, etc.)
-2. Smart Sleep Time (15-30s anti-spam jitter) to maintain high deliverability.
-3. Dynamically generates personalized pitch per creator using OpenAI or dynamic templates.
-4. Auto-syncs delivery status directly to Supabase table.
+Rules & Configuration:
+1. Sender Accounts (Paid Resend Key 2: RESEND_API_KEY_2):
+   - Domain 1: MakeAble Partnerships <collab@makeable.work>
+   - Domain 2: MakeAble Partnerships <collab@makeable.website>
+   - Domain 3: MakeAble Partnerships <collab@makeable.online>
+   - Reply-To: support@makeable.nyc (ALWAYS)
+   - Excluded: .nyc and .info are NOT used as sender addresses.
+
+2. Round-Robin Sequence & Delays:
+   - 1 email from .work -> 1 from .website -> 1 from .online -> repeat.
+   - Inter-email Delay: 30 seconds between every email.
+
+3. Batching & Cooldown:
+   - Batch size: 5 emails per domain (15 emails total per batch).
+   - After each batch of 15 emails is sent, sleep for 30 MINUTES (1800s) before starting the next batch.
+
+4. Daily Warmup Schedule:
+   - Day 1: 30 emails per domain (90 total / day)
+   - Day 2: 31 emails per domain (93 total / day)
+   - Daily Increment: +1 email per domain per day.
+   - Max Cap: 50 emails per domain (150 total / day).
+
+5. Auto-Resume & Manual Stop Controls:
+   - Automatic Pause (Limit Hit): When daily limit is hit, sleeps until Midnight (00:00), then auto-resumes with limit + 1.
+   - Manual Web UI Stop: If stopped via button, stays STOPPED permanently (no auto-start at midnight).
 """
 
 import os
@@ -17,6 +34,7 @@ import sys
 import time
 import random
 import json
+import datetime
 import requests
 from dotenv import load_dotenv
 
@@ -26,55 +44,77 @@ if hasattr(sys.stdout, 'reconfigure'):
 load_dotenv(".env")
 load_dotenv("frontend/.env.local")
 
-# Sender Accounts
-ACCOUNTS = []
-if os.environ.get("RESEND_API_KEY"):
-    ACCOUNTS.append({
-        "name": os.environ.get("SENDER_NAME", "MakeAble Partnerships"),
-        "email": os.environ.get("SENDER_EMAIL", "partnerships@makeable.info"),
-        "key": os.environ.get("RESEND_API_KEY")
-    })
+RESEND_KEY = os.environ.get("RESEND_API_KEY_2") or os.environ.get("RESEND_API_KEY")
 
-if os.environ.get("RESEND_API_KEY_2"):
-    ACCOUNTS.append({
-        "name": os.environ.get("SENDER_NAME_2") or os.environ.get("SENDER_NAME", "MakeAble Partnerships"),
-        "email": os.environ.get("SENDER_EMAIL_2", "collab@makeable.online"),
-        "key": os.environ.get("RESEND_API_KEY_2")
-    })
+# 3 Target Domains (NO .nyc, NO .info)
+ACCOUNTS = [
+    {
+        "name": "MakeAble Partnerships",
+        "email": "collab@makeable.work",
+        "domain": "makeable.work",
+        "key": RESEND_KEY
+    },
+    {
+        "name": "MakeAble Partnerships",
+        "email": "collab@makeable.website",
+        "domain": "makeable.website",
+        "key": RESEND_KEY
+    },
+    {
+        "name": "MakeAble Partnerships",
+        "email": "collab@makeable.online",
+        "domain": "makeable.online",
+        "key": RESEND_KEY
+    }
+]
 
-if os.environ.get("RESEND_API_KEY_3"):
-    ACCOUNTS.append({
-        "name": os.environ.get("SENDER_NAME_3") or os.environ.get("SENDER_NAME", "MakeAble Partnerships"),
-        "email": os.environ.get("SENDER_EMAIL_3", "support@makeable.website"),
-        "key": os.environ.get("RESEND_API_KEY_3")
-    })
-
+REPLY_TO = "support@makeable.nyc"
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-REPLY_TO = os.environ.get("REPLY_TO_EMAIL", "support@makeable.nyc")
 SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")
 
-MIN_SLEEP_SECONDS = 15
-MAX_SLEEP_SECONDS = 30
-ROTATION_INTERVAL = 5  # 5 emails per sender domain
+STATE_FILE = os.path.join("data", "outreach_state.json")
+INTER_EMAIL_DELAY = 30  # 30 seconds between emails
+EMAILS_PER_DOMAIN_PER_BATCH = 5
+BATCH_COOLDOWN_SECONDS = 1800  # 30 minutes sleep after batch
+INITIAL_DAILY_LIMIT_PER_DOMAIN = 30
+MAX_DAILY_LIMIT_PER_DOMAIN = 50
 
-def get_sender_for_index(index: int, mode: str = "rotate", custom_email: str = None) -> dict:
-    if custom_email:
-        matched = next((a for a in ACCOUNTS if custom_email.split('@')[-1] in a['email']), None)
-        key = matched['key'] if matched else (ACCOUNTS[0]['key'] if ACCOUNTS else "")
-        return {"name": "MakeAble Partnerships", "email": custom_email, "key": key}
-        
-    if not ACCOUNTS:
-        return {"name": "MakeAble Partnerships", "email": "partnerships@makeable.info", "key": ""}
-        
-    if mode == "sender_2" and len(ACCOUNTS) > 1:
-        return ACCOUNTS[1]
-    if mode == "sender_1":
-        return ACCOUNTS[0]
-        
-    # Rotate every 5 emails
-    account_idx = (index // ROTATION_INTERVAL) % len(ACCOUNTS)
-    return ACCOUNTS[account_idx]
+def load_outreach_state() -> dict:
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {
+        "manual_stop": False,
+        "current_day_limit_per_domain": INITIAL_DAILY_LIMIT_PER_DOMAIN,
+        "last_reset_date": datetime.date.today().isoformat(),
+        "today_sent_per_domain": {a["email"]: 0 for a in ACCOUNTS},
+        "total_sent_all_time": 0,
+        "is_running": False
+    }
+
+def save_outreach_state(state: dict):
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    state["last_updated_at"] = datetime.datetime.now().isoformat()
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2)
+
+def check_and_update_daily_reset(state: dict) -> dict:
+    today_str = datetime.date.today().isoformat()
+    if state.get("last_reset_date") != today_str:
+        print(f"[📅 NEW DAY RESET] Transitioning to new day {today_str}...", flush=True)
+        state["last_reset_date"] = today_str
+        state["today_sent_per_domain"] = {a["email"]: 0 for a in ACCOUNTS}
+        # Warmup increment: +1 email per domain per day up to max cap 50
+        current_lim = state.get("current_day_limit_per_domain", INITIAL_DAILY_LIMIT_PER_DOMAIN)
+        new_lim = min(current_lim + 1, MAX_DAILY_LIMIT_PER_DOMAIN)
+        state["current_day_limit_per_domain"] = new_lim
+        print(f"[📈 WARMUP INCREMENT] New daily limit per domain: {new_lim} (Total: {new_lim * len(ACCOUNTS)} emails/day)", flush=True)
+        save_outreach_state(state)
+    return state
 
 def generate_pitch(creator: dict, sender_name: str) -> tuple:
     username = creator.get("username", "creator")
@@ -85,17 +125,22 @@ def generate_pitch(creator: dict, sender_name: str) -> tuple:
     clean_name = name.split()[0] if name else username
     bio_hook = f"your focus on {bio[:45]}..." if bio else f"your {category.lower()} content"
 
-    # OpenAI attempt
+    # OpenAI GPT-4o-mini generation
     if OPENAI_API_KEY and len(OPENAI_API_KEY) > 15 and not OPENAI_API_KEY.startswith("sk-proj-your"):
         try:
-            prompt = f"""You are a human Creator Partnerships Lead at "MakeAble" (https://makeable.nyc).
-Write an authentic, warm, and bespoke outreach email to Instagram creator @{username} ({name}) inviting them to collaborate.
+            prompt = f"""You are a Creator Partnerships Manager at "MakeAble" (https://makeable.nyc).
+Write an authentic, personalized outreach email to Instagram creator @{username} ({name}).
 
-Bio: "{bio}"
+Creator Bio: "{bio}"
 Niche: {category}
-Perks: 15% recurring commission, 10% follower discount, 100% free product gifting kit.
 
-Return STRICT JSON: {{"subject": "...", "body": "..."}}"""
+IMPORTANT REQUIREMENTS:
+You MUST offer BOTH options clearly to the creator:
+1. Paid Sponsorship / Collaboration ($150 - $500 flat fee per Reel/Post based on rate sheet).
+2. Affiliate Partnership (15% recurring commission + 10% follower discount code + Complimentary Gifted Product Box).
+
+Keep the email warm, professional, concise, and structured cleanly.
+Return STRICT JSON format: {{"subject": "...", "body": "..."}}"""
 
             res = requests.post(
                 "https://api.openai.com/v1/chat/completions",
@@ -104,7 +149,7 @@ Return STRICT JSON: {{"subject": "...", "body": "..."}}"""
                     "model": "gpt-4o-mini",
                     "messages": [{"role": "user", "content": prompt}],
                     "response_format": {"type": "json_object"},
-                    "temperature": 0.85
+                    "temperature": 0.8
                 },
                 timeout=20
             )
@@ -112,34 +157,39 @@ Return STRICT JSON: {{"subject": "...", "body": "..."}}"""
             if "choices" in data:
                 parsed = json.loads(data["choices"][0]["message"]["content"])
                 return parsed["subject"], parsed["body"]
-        except Exception:
+        except Exception as e:
             pass
 
+    # Default High-Converting Fallback Pitch with BOTH Paid Collab & Affiliate Options
     subjects = [
-        f"Quick question for @{username} + MakeAble creator program ✨",
-        f"Loved your post @{username}! Affiliate partnership with MakeAble 🤝",
-        f"Exclusive creator partner invite for @{username} (15% commission + gifting) 📦",
-        f"MakeAble x @{username} — Partner program & free product package for you"
+        f"Paid Collab + Partnership Invite for @{username} ✨",
+        f"MakeAble x @{username} — Sponsored Post & Affiliate Partner Options 🤝",
+        f"Collaboration Offer for @{username} (Paid Flat Fee or Affiliate + Free Gifting Kit) 📦",
+        f"Quick question for @{username} — MakeAble creator collaboration"
     ]
 
     body = f"""Hey {clean_name},
 
-I hope you're having a wonderful week!
+I hope you're having a great week!
 
-I came across your Instagram profile (@{username}) and wanted to reach out because our team loves {bio_hook}. The aesthetic and community you've built in the {category} space is super inspiring.
+I came across your Instagram profile (@{username}) and our team really loves {bio_hook}. The aesthetic and engagement you've cultivated in the {category} space is amazing.
 
-I'm reaching out from MakeAble (https://makeable.nyc). We're onboarding a curated group of creators into our **Exclusive Affiliate Partner Program** and think you'd be an ideal fit!
+I'm reaching out from MakeAble (https://makeable.nyc). We're expanding our creator network and would love to partner with you! We offer two flexible collaboration paths so you can choose what works best for you:
 
-Here are the perks:
-• 💰 **15% Commission**: You'll earn 15% on every product sold through your personalized link/code.
-• 🎁 **10% Buyer Discount**: An exclusive discount code for your followers so your community saves money on every purchase.
-• 📦 **Complimentary Product Box**: We'll ship you a free gifting package right away to test and review.
+💰 **Option 1: Paid Sponsored Campaign**
+• We offer flat-rate sponsored fees ($150 - $500+ per Instagram Reel/Post based on your media kit rates).
 
-Would you be open to partnering with us? If so, simply reply with your shipping address and we'll get your gifting kit and affiliate portal activated immediately!
+🛍️ **Option 2: Affiliate Partner & Free Product Box**
+• **15% Recurring Commission** on all sales via your personal link/code.
+• **10% Follower Discount Code** to boost conversion for your audience.
+• **Complimentary Product Box** shipped to your door to review and keep.
+
+Would you be open to collaborating with MakeAble? If interested, simply reply to this email (or let us know your media kit rates), and we'll send over the details right away!
 
 Best regards,
 {sender_name}
-MakeAble Partnerships • https://makeable.nyc"""
+Creator Partnerships Team • MakeAble
+https://makeable.nyc"""
 
     hash_val = sum(ord(c) for c in username)
     return subjects[hash_val % len(subjects)], body
@@ -166,68 +216,134 @@ def send_email_resend(account: dict, to_email: str, subject: str, body: str) -> 
         )
         return res.status_code in [200, 201]
     except Exception as e:
-        print(f"    [!] Dispatch error: {e}")
+        print(f"    [!] Resend Dispatch Error: {e}", flush=True)
         return False
 
-def run_automated_outreach(limit: int = 10, dry_run: bool = False, mode: str = "rotate", custom_email: str = None):
-    print("=" * 75)
-    print("⚡ AUTOMATED OUTREACH ENGINE WITH 5-EMAIL SENDER ROTATION")
-    print("=" * 75)
-    print(f"[*] Configured Senders: {len(ACCOUNTS)}")
-    for i, a in enumerate(ACCOUNTS, 1):
-        print(f"    Account {i}: {a['name']} <{a['email']}>")
-    print(f"[*] Sender Mode: {mode} (5 emails per domain)")
-    print(f"[*] Daily Limit: {limit} emails")
-    print(f"[*] Sleep Time: {MIN_SLEEP_SECONDS}s - {MAX_SLEEP_SECONDS}s (Random Anti-Spam Jitter)")
-    print(f"[*] Mode: {'DRY RUN (Preview Only)' if dry_run else 'LIVE DISPATCH'}")
-    print("-" * 75)
+def run_continuous_outreach_loop():
+    print("=" * 80, flush=True)
+    print("🚀 AUTOMATED 3-DOMAIN OUTREACH ENGINE STARTED", flush=True)
+    print("=" * 80, flush=True)
+    print("Sending Domains:")
+    for a in ACCOUNTS:
+        print(f"  • {a['name']} <{a['email']}> (Reply-To: {REPLY_TO})", flush=True)
+    print(f"Rules: Round-robin 1-by-1 (.work -> .website -> .online)")
+    print(f"Delay: {INTER_EMAIL_DELAY}s between emails")
+    print(f"Batching: {EMAILS_PER_DOMAIN_PER_BATCH} per domain/batch ({EMAILS_PER_DOMAIN_PER_BATCH * len(ACCOUNTS)} emails total) -> 30-min sleep")
+    print(f"Warmup: Daily limit starts at {INITIAL_DAILY_LIMIT_PER_DOMAIN}/domain, +1/day up to max {MAX_DAILY_LIMIT_PER_DOMAIN}/domain")
+    print("-" * 80, flush=True)
 
-    # Fetch pending from Supabase
-    creators = []
-    if SUPABASE_URL and SUPABASE_KEY:
-        try:
-            r = requests.get(
-                f"{SUPABASE_URL}/rest/v1/creators?select=*&email_status=neq.sent&limit={limit}",
-                headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"},
-                timeout=15
-            )
-            if r.status_code == 200:
-                creators = [c for c in r.json() if c.get("email") and "@" in c.get("email")]
-        except Exception as e:
-            print(f"[!] Supabase fetch warning: {e}")
+    state = load_outreach_state()
+    state["is_running"] = True
+    state["manual_stop"] = False
+    save_outreach_state(state)
 
-    if not creators and os.path.exists("data/all_creators_merged.json"):
-        with open("data/all_creators_merged.json", "r", encoding="utf-8") as f:
-            all_c = json.load(f)
-            creators = [c for c in all_c if c.get("email") and c.get("email_status") != "sent"][:limit]
+    while True:
+        state = load_outreach_state()
 
-    print(f"[*] Loaded {len(creators)} pending creators ready for outreach.")
-    if not creators:
-        print("[✓] All creators have already been emailed!")
-        return
+        # 1. Check if user clicked STOP on Web UI
+        if state.get("manual_stop"):
+            print("\n🛑 [MANUAL STOP DETECTED] Engine stopped by user via Web UI. Exiting continuous loop.", flush=True)
+            state["is_running"] = False
+            save_outreach_state(state)
+            break
 
-    sent_count = 0
+        # 2. Check Daily Reset & Warmup Increment
+        state = check_and_update_daily_reset(state)
+        daily_limit = state.get("current_day_limit_per_domain", INITIAL_DAILY_LIMIT_PER_DOMAIN)
+        sent_dict = state.get("today_sent_per_domain", {})
 
-    for i, creator in enumerate(creators):
-        sender = get_sender_for_index(i, mode=mode, custom_email=custom_email)
-        username = creator.get("username")
-        email = creator.get("email")
-        followers = creator.get("followers", "N/A")
+        # 3. Check if today's daily limit is hit for all 3 domains
+        all_limits_hit = all(sent_dict.get(a["email"], 0) >= daily_limit for a in ACCOUNTS)
 
-        print(f"\n[{i + 1}/{len(creators)}] @{username} ({followers}) -> {email} | via [{sender['email']}]")
+        if all_limits_hit:
+            now = datetime.datetime.now()
+            tomorrow = datetime.datetime.combine(now.date() + datetime.timedelta(days=1), datetime.time(0, 5))
+            seconds_until_midnight = int((tomorrow - now).total_seconds())
+            hours_rem = round(seconds_until_midnight / 3600, 1)
 
-        subject, body = generate_pitch(creator, sender["name"])
+            print(f"\n💤 [DAILY LIMIT REACHED] Sent {daily_limit} emails per domain today ({daily_limit * len(ACCOUNTS)} total).", flush=True)
+            print(f"   Sleeping {hours_rem} hours until Midnight (00:05) for Auto-Resume with +1 daily limit increment...", flush=True)
 
-        if dry_run:
-            print(f"  [DRY RUN] Generated pitch for {email} via {sender['email']}")
-            sent_count += 1
-        else:
-            success = send_email_resend(sender, email, subject, body)
+            # Sleep in 30-second checks so manual stop is immediately responsive
+            for _ in range(0, seconds_until_midnight, 30):
+                st = load_outreach_state()
+                if st.get("manual_stop"):
+                    print("\n🛑 [MANUAL STOP DETECTED DURING NIGHT SLEEP] Stopping loop permanently.", flush=True)
+                    st["is_running"] = False
+                    save_outreach_state(st)
+                    return
+                time.sleep(30)
+            continue
+
+        # 4. Fetch pending creators from Supabase
+        pending_creators = []
+        if SUPABASE_URL and SUPABASE_KEY:
+            try:
+                r = requests.get(
+                    f"{SUPABASE_URL}/rest/v1/creators?select=*&email_status=neq.sent&limit=100",
+                    headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"},
+                    timeout=15
+                )
+                if r.status_code == 200:
+                    pending_creators = [c for c in r.json() if c.get("email") and "@" in c.get("email")]
+            except Exception as e:
+                print(f"[!] Supabase fetch error: {e}", flush=True)
+
+        if not pending_creators:
+            print("\n[✓] All creators in database have been emailed! Sleeping 10 minutes before checking for new creators...", flush=True)
+            time.sleep(600)
+            continue
+
+        # 5. Execute 1 Batch: 5 emails per domain (15 emails total in 1-by-1 round-robin)
+        print(f"\n📦 [STARTING BATCH] Target: {EMAILS_PER_DOMAIN_PER_BATCH} emails per domain (Total batch: {EMAILS_PER_DOMAIN_PER_BATCH * len(ACCOUNTS)} emails)", flush=True)
+
+        batch_sent_per_domain = {a["email"]: 0 for a in ACCOUNTS}
+        total_batch_target = EMAILS_PER_DOMAIN_PER_BATCH * len(ACCOUNTS)
+        creator_idx = 0
+
+        while sum(batch_sent_per_domain.values()) < total_batch_target and creator_idx < len(pending_creators):
+            # Check manual stop flag
+            st = load_outreach_state()
+            if st.get("manual_stop"):
+                print("\n🛑 [MANUAL STOP DETECTED IN BATCH] Exiting immediately.", flush=True)
+                st["is_running"] = False
+                save_outreach_state(st)
+                return
+
+            # Round-robin selection of domain
+            acct_idx = sum(batch_sent_per_domain.values()) % len(ACCOUNTS)
+            account = ACCOUNTS[acct_idx]
+            acct_email = account["email"]
+
+            # Skip if this domain hit today's daily limit or batch target
+            if sent_dict.get(acct_email, 0) >= daily_limit or batch_sent_per_domain[acct_email] >= EMAILS_PER_DOMAIN_PER_BATCH:
+                # find next available domain
+                avail = [a for a in ACCOUNTS if sent_dict.get(a["email"], 0) < daily_limit and batch_sent_per_domain[a["email"]] < EMAILS_PER_DOMAIN_PER_BATCH]
+                if not avail:
+                    break
+                account = avail[0]
+                acct_email = account["email"]
+
+            creator = pending_creators[creator_idx]
+            creator_idx += 1
+
+            username = creator.get("username")
+            email = creator.get("email")
+
+            subject, body = generate_pitch(creator, account["name"])
+            print(f"[{sum(batch_sent_per_domain.values()) + 1}/{total_batch_target}] Sending to @{username} ({email}) via [{acct_email}]...", flush=True)
+
+            success = send_email_resend(account, email, subject, body)
             if success:
-                print(f"  [✓ SUCCESS] Delivered to {email} from {sender['email']}")
-                sent_count += 1
-                
-                # Update Supabase
+                batch_sent_per_domain[acct_email] += 1
+                sent_dict[acct_email] = sent_dict.get(acct_email, 0) + 1
+                state["today_sent_per_domain"] = sent_dict
+                state["total_sent_all_time"] = state.get("total_sent_all_time", 0) + 1
+                save_outreach_state(state)
+
+                print(f"   ✓ Delivered successfully! Today's count for {acct_email}: {sent_dict[acct_email]}/{daily_limit}", flush=True)
+
+                # Update Supabase status
                 if SUPABASE_URL and SUPABASE_KEY:
                     try:
                         requests.patch(
@@ -235,33 +351,33 @@ def run_automated_outreach(limit: int = 10, dry_run: bool = False, mode: str = "
                             headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"},
                             json={
                                 "email_status": "sent",
-                                "last_emailed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                "last_emailed_at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
                                 "email_subject": subject,
                                 "email_body": body
                             },
                             timeout=10
                         )
-                    except:
+                    except Exception:
                         pass
             else:
-                print(f"  [✗ FAILED] Could not deliver to {email}")
+                print(f"   ✗ Delivery failed for {email}", flush=True)
 
-        if i < len(creators) - 1:
-            sleep_duration = random.randint(MIN_SLEEP_SECONDS, MAX_SLEEP_SECONDS)
-            print(f"  [SLEEP] Waiting {sleep_duration}s (anti-spam jitter)...")
-            time.sleep(sleep_duration)
+            # 30 Seconds Inter-Email Delay
+            print(f"   ⏳ Waiting {INTER_EMAIL_DELAY} seconds before next email...", flush=True)
+            time.sleep(INTER_EMAIL_DELAY)
 
-    print("=" * 75)
-    print(f"🏁 COMPLETED: Dispatched {sent_count} / {len(creators)} outreach emails.")
-    print("=" * 75)
+        # 6. Batch Finished: 30 Minutes Cooldown Sleep
+        print(f"\n✅ [BATCH COMPLETE] Finished 1 batch of 15 emails ({dict(batch_sent_per_domain)}).", flush=True)
+        print(f"😴 Sleeping 30 MINUTES (1800 seconds) before starting next batch...", flush=True)
+
+        for _ in range(0, BATCH_COOLDOWN_SECONDS, 10):
+            st = load_outreach_state()
+            if st.get("manual_stop"):
+                print("\n🛑 [MANUAL STOP DETECTED DURING 30-MIN COOLDOWN] Exiting loop.", flush=True)
+                st["is_running"] = False
+                save_outreach_state(st)
+                return
+            time.sleep(10)
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Multi-account automated outreach engine")
-    parser.add_argument("--limit", type=int, default=10, help="Number of emails to send")
-    parser.add_argument("--dry-run", action="store_true", help="Simulate without network send")
-    parser.add_argument("--mode", type=str, default="rotate", choices=["rotate", "sender_1", "sender_2", "custom"])
-    parser.add_argument("--custom-email", type=str, default=None, help="Custom from email")
-    args = parser.parse_args()
-
-    run_automated_outreach(limit=args.limit, dry_run=args.dry_run, mode=args.mode, custom_email=args.custom_email)
+    run_continuous_outreach_loop()
