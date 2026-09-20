@@ -270,6 +270,10 @@ export default function DashboardPage() {
         onOpenSettings={() => setIsSettingsModalOpen(true)}
         onOpenGuide={() => setIsGuideModalOpen(true)}
         onOpenBatch={() => setIsBatchModalOpen(true)}
+        onOpenSingleEmail={() => {
+          setSelectedCreatorForPitch(null);
+          setIsPitchModalOpen(true);
+        }}
         onSyncDb={handleSyncSupabase}
         isDbConnected={isDbConnected}
         totalCount={creators.length}

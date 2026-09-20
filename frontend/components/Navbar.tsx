@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -8,6 +8,7 @@ interface NavbarProps {
   onOpenSettings: () => void;
   onOpenGuide: () => void;
   onOpenBatch: () => void;
+  onOpenSingleEmail?: () => void;
   onSyncDb?: () => void;
   isDbConnected: boolean;
   totalCount: number;
@@ -19,6 +20,7 @@ export default function Navbar({
   onOpenSettings,
   onOpenGuide,
   onOpenBatch,
+  onOpenSingleEmail,
   onSyncDb,
   isDbConnected,
   totalCount,
@@ -102,6 +104,18 @@ export default function Navbar({
               >
                 <Sparkles className="h-4 w-4" />
                 <span>Auto Batch Send ({pendingCount})</span>
+              </button>
+            )}
+
+            {/* Single Custom Email Dispatch Button */}
+            {onOpenSingleEmail && (
+              <button
+                onClick={onOpenSingleEmail}
+                className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold text-violet-900 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition-all shadow-xs"
+                title="Send or Enhance Single Custom Email"
+              >
+                <Mail className="h-4 w-4 text-violet-600" />
+                <span className="hidden sm:inline">Single Email Dispatch</span>
               </button>
             )}
 

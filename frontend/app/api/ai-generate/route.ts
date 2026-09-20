@@ -4,6 +4,9 @@ import OpenAI from 'openai';
 export async function POST(req: Request) {
   try {
     const {
+      mode = 'generate', // 'generate' or 'enhance'
+      userSubject,
+      userBody,
       name,
       username,
       biography,
@@ -17,50 +20,81 @@ export async function POST(req: Request) {
 
     const apiKey = process.env.OPENAI_API_KEY;
     const senderBrand = signature?.brandName || 'MakeAble';
-    const senderName = signature?.senderName || 'MakeAble Team';
+    const senderName = signature?.senderName || 'MakeAble Partnerships';
     const brandSite = signature?.website || 'https://makeable.nyc';
 
-    // 1. Live OpenAI Generation
     if (apiKey && apiKey.trim().length > 15 && !apiKey.includes('your-openai')) {
       try {
         const openai = new OpenAI({ apiKey: apiKey.trim() });
         const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
+        if (mode === 'enhance' && userBody && userBody.trim().length > 0) {
+          const enhancePrompt = `You are an expert Creator Outreach Copywriter for "${senderBrand}" (${brandSite}).
+Your task is to polish, refine, and enhance the user's custom draft email message into a compelling, professional, high-converting pitch for a USA content creator.
+
+User's Current Draft:
+"${userBody}"
+
+STRICT GUIDELINES FOR ENHANCEMENT:
+1. Preserve all key details, CPM rate requests, links (such as https://makeable.nyc/creators/apply), and commission offers.
+2. Fix any grammar, awkward phrasing, or typos.
+3. Use clean paragraph breaks, bold bullet points, and an inviting 1-on-1 human tone.
+4. Keep the subject line engaging if provided ("${userSubject || ''}"), or suggest a polished subject line if missing.
+
+Return STRICT JSON format:
+{
+  "subject": "string",
+  "body": "string"
+}`;
+
+          const completion = await openai.chat.completions.create({
+            model,
+            messages: [{ role: 'user', content: enhancePrompt }],
+            response_format: { type: 'json_object' },
+            temperature: 0.75,
+          });
+
+          const resultText = completion.choices[0].message.content;
+          if (resultText) {
+            const parsed = JSON.parse(resultText);
+            return NextResponse.json({
+              success: true,
+              subject: parsed.subject || userSubject || 'Collaboration Offer with MakeAble',
+              body: parsed.body,
+              usedAi: true
+            });
+          }
+        }
+
+        // Standard AI Generation
         const prompt = `You are a real human Creator Partnerships Lead at "${senderBrand}" (${brandSite}).
-Write a unique, authentic, and bespoke outreach email to an Instagram creator inviting them to collaborate.
+Write a unique, authentic, and bespoke outreach email to Instagram creator @${username || 'creator'} (${name || username || 'Creator'}).
 
 Creator Details:
-- Name: ${name || username}
-- Instagram Handle: @${username}
+- Name: ${name || username || 'Creator'}
+- Instagram Handle: @${username || 'creator'}
 - Category/Niche: ${category || 'Content Creator'}
-- Follower Count: ${followers || '15k'}
+- Follower Count: ${followers || '25k'}
 - Bio: "${biography || 'Lifestyle & creative creator'}"
 ${customBrandInfo ? `- Extra Context: ${customBrandInfo}` : ''}
 
-Partnership Terms to include:
-- Creator earns: ${commissionRate} recurring commission on every product sale generated through their personal link or discount code.
-- Buyer savings: An exclusive ${buyerDiscount} OFF discount code for their followers to save money on every order.
-- Free Product: Complimentary free gifting package shipped immediately so they can test and review our products.
-- Zero upfront costs / no fixed rate negotiations.
+Partnership Options to include:
+1. Option 1: Paid Sponsored Campaign (CPM & rate-card based sponsored Reel/Post campaign - ask them to reply with rate sheet or apply online!).
+2. Option 2: Affiliate Partnership (${commissionRate} recurring commission + ${buyerDiscount} follower discount + Complimentary Gifted Product Box).
+
+Call to Action / Next Steps:
+Ask them to reply directly to this email with their media kit / rate sheet / shipping address OR apply directly online at https://makeable.nyc/creators/apply.
 
 STRICT GUIDELINES:
 1. SUBJECT LINE: 
-   - DO NOT put the username or @handle in the subject line.
-   - Write a fresh, creative, and high-converting subject line highlighting the collab, ${commissionRate} commission, and free product package.
-   - Every subject line should be unique and enticing (vary phrasing: e.g. gifting perks, affiliate collab, exclusive partnership invite).
-
+   - Write a fresh, creative, and enticing subject line highlighting the collab opportunity.
 2. EMAIL BODY:
-   - Write like a genuine human reaching out 1-on-1, NOT a corporate robot.
-   - Avoid repetitive cliches. Use fresh phrasing.
-   - Opening: Mention checking out their profile (@${username}) and mention specific aspects of their content or bio ("${biography || category}").
-   - Offer: Clearly outline the 3 key perks using clean bullet points:
-     - **${commissionRate} Recurring Commission** on all sales made via your link/code.
-     - **${buyerDiscount} Audience Discount** code for your followers to save money.
-     - **100% Free Product Gifting Kit** shipped directly to you to test and feature.
-   - Call to Action: Low friction next step - ask them to reply with their shipping address so we can dispatch the gifting kit and setup their affiliate dashboard.
+   - Write like a genuine human reaching out 1-on-1, NOT a corporate bot.
+   - Outline Option 1 (Paid Sponsored Campaign based on CPM/media kit) and Option 2 (Affiliate Partner + Free Product Box).
+   - Provide next steps: reply to email OR apply at https://makeable.nyc/creators/apply.
    - Sign-off:
      Warmly,
-     MakeAble Team
+     ${senderName}
      https://makeable.nyc
 
 Return STRICT JSON format:
@@ -73,7 +107,7 @@ Return STRICT JSON format:
           model,
           messages: [{ role: 'user', content: prompt }],
           response_format: { type: 'json_object' },
-          temperature: 0.95,
+          temperature: 0.85,
         });
 
         const resultText = completion.choices[0].message.content;
@@ -91,72 +125,50 @@ Return STRICT JSON format:
       }
     }
 
-    // 2. Dynamic Fallback Generator
-    const cleanName = name && name.trim() ? name.split(' ')[0] : username;
+    // Dynamic Fallback Generator
+    const cleanName = name && name.trim() ? name.split(' ')[0] : (username || 'Creator');
     const niche = category ? category.toLowerCase() : 'lifestyle';
     const bioExcerpt = biography && biography.trim().length > 3 ? biography.slice(0, 45) : `${niche} content`;
 
     const subjects = [
-      `15% commission + free gifting partnership offer`,
-      `Creator collab offer: 15% commission & free product box`,
-      `Loved your profile - exclusive partnership offer from MakeAble`,
-      `Free gifting package + 15% affiliate partner offer`,
-      `Exclusive creator collab: 15% commission + free products`
+      `Paid Collab + Partnership Invite for @${username || 'creator'} ✨`,
+      `MakeAble x @${username || 'creator'} — Sponsored Post & Affiliate Partner Options 🤝`,
+      `Collaboration Offer (Paid Sponsored Post or Affiliate + Free Gifting Kit) 📦`
     ];
 
     const bodyTemplates = [
       `Hey ${cleanName},
 
-I was personally checking out your Instagram (@${username}) and our team at MakeAble has been searching for an authentic creator in the ${niche} space. Your work focusing on ${bioExcerpt} really stood out to us!
+I was personally checking out your profile (@${username || 'creator'}) and our team at MakeAble really loves your work in the ${niche} space!
 
-We would love to invite you into our **Exclusive Creator Partner Program** and send you a complimentary gifting package.
+We would love to invite you to partner with MakeAble (https://makeable.nyc). We offer two flexible collaboration paths:
 
-Here is what we're offering:
-• **${commissionRate} Recurring Commission**: Earn ${commissionRate} on every product sold through your personalized link or discount code.
-• **${buyerDiscount} Follower Discount**: An exclusive discount code for your community so they save money on every order.
-• **100% Free Product Gifting Kit**: Shipped straight to your door to test, enjoy, and feature.
+💰 **Option 1: Paid Sponsored Campaign**
+• We offer competitive CPM & rate-sheet fees for sponsored Reel/Post campaigns (reply with your media kit & rate sheet!).
 
-If you'd like to collaborate, simply reply with your shipping address and we'll get your free gifting box sent out and your affiliate portal activated immediately!
+🛍️ **Option 2: Affiliate Partner & Free Product Box**
+• **${commissionRate} Recurring Commission** on all sales via your personal link/code.
+• **${buyerDiscount} Follower Discount** for your audience.
+• **100% Free Product Gifting Kit** shipped straight to your door.
 
-Warmly,
-MakeAble Team
-https://makeable.nyc`,
-
-      `Hey ${cleanName},
-
-Hope you're having a great week! Our team at MakeAble has been following your journey on Instagram (@${username}) and we really admire what you're creating in the ${niche} community, especially ${bioExcerpt}.
-
-We're currently onboarding select creators for our **Affiliate Collaboration Program** and would love to partner with you and send over a free product package.
-
-Here's how we partner:
-• **${commissionRate} Recurring Commission**: You earn a full ${commissionRate} on all sales driven through your personal creator link/code.
-• **${buyerDiscount} Community Discount**: A custom discount code for your audience to save on every purchase.
-• **Free Product Gifting**: We ship a complimentary gifting package directly to you — no upfront costs or strings attached.
-
-Would you be interested in joining? If so, reply with your best shipping address and we'll dispatch your package and log you into the partner dashboard!
+📩 **How to Get Started:**
+• Reply directly to this email with your rate card / shipping address, OR
+• Apply instantly on our creator portal: https://makeable.nyc/creators/apply
 
 Warmly,
-MakeAble Team
+${senderName}
 https://makeable.nyc`
     ];
 
-    const selectedSubject = subjects[Math.floor(Math.random() * subjects.length)];
-    const selectedBody = bodyTemplates[Math.floor(Math.random() * bodyTemplates.length)];
-
     return NextResponse.json({
       success: true,
-      subject: selectedSubject,
-      body: selectedBody,
+      subject: subjects[Math.floor(Math.random() * subjects.length)],
+      body: bodyTemplates[0],
       usedAi: false
     });
 
-  } catch (error: any) {
-    console.error('AI Generation Error:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to generate AI pitch' },
-      { status: 500 }
-    );
+  } catch (err: any) {
+    console.error('AI Generate Error:', err);
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
-
-
