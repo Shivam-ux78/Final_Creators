@@ -198,7 +198,7 @@ export default function BatchOutreachModal({
                 )}
               </div>
               <p className="text-xs text-slate-500">
-                100% automated — 5/domain rotation & scheduled recurring burst cycles
+                100% automated — 3-Domain rotation (.work, .website, .online) • Paid Collab + Affiliate pitches (USA Creators)
               </p>
             </div>
           </div>
@@ -343,18 +343,23 @@ export default function BatchOutreachModal({
                   <button
                     type="button"
                     onClick={() => setSenderMode('rotate')}
-                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                    className={`col-span-2 p-2.5 rounded-xl border text-left transition-all ${
                       senderMode === 'rotate'
                         ? 'border-violet-600 bg-violet-50/80 text-violet-900 font-bold shadow-sm'
                         : 'border-slate-200 hover:border-slate-300 text-slate-700'
                     }`}
                   >
-                    <div className="flex items-center space-x-1.5 mb-0.5">
-                      <Repeat className="h-3.5 w-3.5 text-violet-600" />
-                      <span className="font-bold">Auto-Rotate (5 per domain)</span>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <div className="flex items-center space-x-1.5">
+                        <Repeat className="h-3.5 w-3.5 text-violet-600" />
+                        <span className="font-bold">Auto-Rotate All 3 Domains (1-by-1)</span>
+                      </div>
+                      <span className="text-[9px] font-bold bg-violet-600 text-white px-2 py-0.5 rounded-full">
+                        Recommended
+                      </span>
                     </div>
                     <span className="text-[10px] text-slate-500 font-normal block truncate">
-                      Rotates between .info & .online accounts
+                      Rotates round-robin between .work ➔ .website ➔ .online (30s delay)
                     </span>
                   </button>
 
@@ -369,10 +374,10 @@ export default function BatchOutreachModal({
                   >
                     <div className="flex items-center space-x-1.5 mb-0.5">
                       <Mail className="h-3.5 w-3.5 text-indigo-600" />
-                      <span className="font-bold">Account 1 (partnerships@)</span>
+                      <span className="font-bold">Domain 1 (.work)</span>
                     </div>
                     <span className="text-[10px] text-slate-500 font-normal block truncate">
-                      makeable.info only
+                      collab@makeable.work
                     </span>
                   </button>
 
@@ -387,28 +392,28 @@ export default function BatchOutreachModal({
                   >
                     <div className="flex items-center space-x-1.5 mb-0.5">
                       <Mail className="h-3.5 w-3.5 text-emerald-600" />
-                      <span className="font-bold">Account 2 (collab@)</span>
+                      <span className="font-bold">Domain 2 (.website)</span>
                     </div>
                     <span className="text-[10px] text-slate-500 font-normal block truncate">
-                      makeable.online only
+                      collab@makeable.website
                     </span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setSenderMode('custom')}
-                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                    className={`col-span-2 p-2.5 rounded-xl border text-left transition-all ${
                       senderMode === 'custom'
                         ? 'border-violet-600 bg-violet-50/80 text-violet-900 font-bold shadow-sm'
                         : 'border-slate-200 hover:border-slate-300 text-slate-700'
                     }`}
                   >
                     <div className="flex items-center space-x-1.5 mb-0.5">
-                      <Settings2 className="h-3.5 w-3.5 text-amber-600" />
-                      <span className="font-bold">Custom Sender Email</span>
+                      <Mail className="h-3.5 w-3.5 text-amber-600" />
+                      <span className="font-bold">Domain 3 (.online)</span>
                     </div>
                     <span className="text-[10px] text-slate-500 font-normal block truncate">
-                      Specify manual from email
+                      collab@makeable.online
                     </span>
                   </button>
                 </div>

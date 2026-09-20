@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React from 'react';
 import { Search, Calendar, Filter, ArrowUpDown, CheckCircle2, Clock3, RotateCcw } from 'lucide-react';
@@ -94,12 +94,12 @@ export default function FiltersBar({
 
         {/* Category Filter */}
         <div className="flex items-center space-x-2">
-          <Filter className="h-4 w-4 text-slate-500" />
-          <span className="text-xs font-medium text-slate-600">Category:</span>
+          <Filter className="h-4 w-4 text-slate-500 shrink-0" />
+          <span className="text-xs font-medium text-slate-600 shrink-0">Category:</span>
           <select
             value={filters.category}
             onChange={(e) => onFilterChange({ category: e.target.value })}
-            className="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500"
+            className="max-w-[210px] text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500 truncate"
           >
             <option value="All">All Categories</option>
             {categories.map((cat) => (
