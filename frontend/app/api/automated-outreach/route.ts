@@ -264,24 +264,22 @@ Creator Details:
 - Bio: "${bio || 'Content creator & digital influencer'}"
 
 Partnership Terms:
-- ${commissionRate} recurring commission on every product sale generated from their creator link/code.
-- ${buyerDiscount} OFF discount code for their followers to save money on every order.
-- 100% Free product gifting package sent right away. No upfront fees / no fixed rate negotiations.
+- Option 1: Paid Sponsored Campaign (CPM & rate-card based sponsored Reel/Post campaign - reply with rate sheet or apply online!).
+- Option 2: Affiliate Partnership (${commissionRate} recurring commission + ${buyerDiscount} follower discount + Free Product Gifting Kit).
 
 STRICT GUIDELINES:
 1. SUBJECT LINE:
    - DO NOT include the @username or name in the subject line.
-   - Write a fresh, creative, and enticing subject line highlighting the collab, ${commissionRate} commission, and free gifting kit.
+   - Write a fresh, creative, and enticing subject line highlighting the collab, paid sponsorship / ${commissionRate} commission, and free gifting kit.
    - Make every subject line distinct and varied across creators.
 
 2. EMAIL BODY:
    - Write like a real person reaching out 1-on-1, NOT a corporate bot.
    - Opening: Mention checking out their profile (@${username}) and mention specific aspects of their content or bio ("${bio || category}").
-   - Offer: Clearly outline the 3 key perks using clean bold bullet points:
-      • **${commissionRate} Recurring Commission** on all sales made via your link/code.
-      • **${buyerDiscount} Audience Discount** code for your followers to save money.
-      • **100% Free Product Gifting Kit** shipped directly to you to test and feature.
-   - Call to Action: Low friction next step — ask them to reply with their shipping address to get their free package dispatched and affiliate portal set up.
+   - Offer: Clearly outline the 2 collaboration options:
+      💰 **Option 1: Paid Sponsored Campaign**: Competitive CPM & rate-sheet sponsored fees (reply with your rate sheet / media kit!).
+      🛍️ **Option 2: Affiliate Partner & Free Product Box**: ${commissionRate} recurring commission + ${buyerDiscount} audience discount + 100% Free Product Box shipped to your door.
+   - Call to Action: Reply directly to this email (with media kit or shipping address) OR apply online at https://makeable.nyc/creators/apply
    - Sign-off:
      Warmly,
      ${activeSenderName}
@@ -311,11 +309,10 @@ Return STRICT JSON: {"subject": "...", "body": "..."}`;
       if (!subject || !body) {
         const hash = username.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
         const subjects = [
-          `15% commission + free gifting partnership offer 🎁`,
-          `Creator collab offer: 15% commission & free product box 🤝`,
-          `Loved your profile — exclusive partnership offer from MakeAble ✨`,
-          `Free gifting package + 15% affiliate partner offer 📦`,
-          `Exclusive creator collab: 15% commission + free products 🎁`
+          `Paid Collab + Partnership Invite for @${username} ✨`,
+          `MakeAble x @${username} — Sponsored Post & Affiliate Partner Options 🤝`,
+          `Collaboration Offer for @${username} (Paid Sponsored Post or Affiliate + Free Gifting Kit) 📦`,
+          `Exclusive creator collab: Paid sponsorship + 15% commission 🎁`
         ];
         subject = subjects[hash % subjects.length];
 
@@ -323,16 +320,21 @@ Return STRICT JSON: {"subject": "...", "body": "..."}`;
         const bodyTemplates = [
           `Hey ${cleanName},
 
-I was personally checking out your Instagram (@${username}) and our team at MakeAble has been searching for an authentic creator in the ${category.toLowerCase()} space. Your work focusing on ${bioHook} really stood out to us!
+I was personally checking out your Instagram (@${username}) and our team at MakeAble has been searching for authentic creators in the ${category.toLowerCase()} space. Your work focusing on ${bioHook} really stood out to us!
 
-We would love to invite you into our **Exclusive Creator Partner Program** and send you a complimentary gifting package.
+We would love to invite you to partner with MakeAble (https://makeable.nyc). We offer two flexible collaboration paths so you can choose what works best for you:
 
-Here is what we're offering:
-• **${commissionRate} Recurring Commission**: Earn ${commissionRate} on every product sold through your personalized link or discount code.
-• **${buyerDiscount} Follower Discount**: An exclusive discount code for your community so they save money on every order.
-• **100% Free Product Gifting Kit**: Shipped straight to your door to test, enjoy, and feature.
+💰 **Option 1: Paid Sponsored Campaign**
+• We offer competitive CPM & rate-sheet fees for sponsored Reel/Post campaigns (reply with your media kit / rate sheet!).
 
-If you'd like to collaborate, simply reply with your shipping address and we'll get your free gifting box sent out and your affiliate portal activated immediately!
+🛍️ **Option 2: Affiliate Partner & Free Product Box**
+• **${commissionRate} Recurring Commission** on all sales via your personal link/code.
+• **${buyerDiscount} Follower Discount**: An exclusive discount code for your audience.
+• **100% Free Product Gifting Kit**: Shipped straight to your door to test and feature.
+
+📩 **How to Get Started:**
+• Reply directly to this email with your rate card / shipping address, OR
+• Apply instantly on our creator portal: https://makeable.nyc/creators/apply
 
 Warmly,
 ${activeSenderName}
@@ -342,14 +344,19 @@ https://makeable.nyc`,
 
 Hope you're having a great week! Our team at MakeAble has been following your journey on Instagram (@${username}) and we really admire what you're creating in the ${category.toLowerCase()} community, especially ${bioHook}.
 
-We're currently onboarding select creators for our **Affiliate Collaboration Program** and would love to partner with you and send over a free product package.
+We're expanding our creator network and would love to collaborate with you! We have two options available:
 
-Here's how we partner:
-• **${commissionRate} Recurring Commission**: You earn a full ${commissionRate} on all sales driven through your personal creator link/code.
-• **${buyerDiscount} Community Discount**: A custom discount code for your audience to save on every purchase.
-• **Free Product Gifting**: We ship a complimentary gifting package directly to you — no upfront costs or strings attached.
+💰 **Option 1: Paid Sponsored Campaign**
+• We offer CPM & rate-card based sponsored campaign fees (reply with your rate card or media kit!).
 
-Would you be interested in joining? If so, reply with your best shipping address and we'll dispatch your package and log you into the partner dashboard!
+🛍️ **Option 2: Affiliate Collaboration & Free Gifting**
+• **${commissionRate} Recurring Commission** on all sales driven through your creator link/code.
+• **${buyerDiscount} Community Discount** code for your followers.
+• **Free Product Box**: Shipped directly to your door — no upfront costs.
+
+📩 **Next Steps:**
+• Reply directly to this email with your media kit / rate card, OR
+• Fill out our 1-minute creator application: https://makeable.nyc/creators/apply
 
 Warmly,
 ${activeSenderName}

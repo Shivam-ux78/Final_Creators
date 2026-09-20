@@ -136,8 +136,11 @@ Niche: {category}
 
 IMPORTANT REQUIREMENTS:
 You MUST offer BOTH options clearly to the creator:
-1. Paid Sponsorship / Collaboration ($150 - $500 flat fee per Reel/Post based on rate sheet).
+1. Paid Sponsorship / Collaboration (Based on their media kit, CPM, and rate sheet — ask them to send their rate card or apply online!).
 2. Affiliate Partnership (15% recurring commission + 10% follower discount code + Complimentary Gifted Product Box).
+
+Call to Action / Next Steps:
+Ask them to reply directly to this email with their media kit / shipping address OR apply directly at https://makeable.nyc/creators/apply.
 
 Keep the email warm, professional, concise, and structured cleanly.
 Return STRICT JSON format: {{"subject": "...", "body": "..."}}"""
@@ -164,7 +167,7 @@ Return STRICT JSON format: {{"subject": "...", "body": "..."}}"""
     subjects = [
         f"Paid Collab + Partnership Invite for @{username} ✨",
         f"MakeAble x @{username} — Sponsored Post & Affiliate Partner Options 🤝",
-        f"Collaboration Offer for @{username} (Paid Flat Fee or Affiliate + Free Gifting Kit) 📦",
+        f"Collaboration Offer for @{username} (Paid Sponsored Post or Affiliate + Free Gifting Kit) 📦",
         f"Quick question for @{username} — MakeAble creator collaboration"
     ]
 
@@ -177,14 +180,18 @@ I came across your Instagram profile (@{username}) and our team really loves {bi
 I'm reaching out from MakeAble (https://makeable.nyc). We're expanding our creator network and would love to partner with you! We offer two flexible collaboration paths so you can choose what works best for you:
 
 💰 **Option 1: Paid Sponsored Campaign**
-• We offer flat-rate sponsored fees ($150 - $500+ per Instagram Reel/Post based on your media kit rates).
+• We offer competitive CPM & rate-sheet fees for sponsored Reel/Post campaigns (reply with your media kit & rate sheet!).
 
 🛍️ **Option 2: Affiliate Partner & Free Product Box**
 • **15% Recurring Commission** on all sales via your personal link/code.
 • **10% Follower Discount Code** to boost conversion for your audience.
 • **Complimentary Product Box** shipped to your door to review and keep.
 
-Would you be open to collaborating with MakeAble? If interested, simply reply to this email (or let us know your media kit rates), and we'll send over the details right away!
+Would you be open to collaborating with MakeAble?
+
+📩 **How to Get Started:**
+• Reply directly to this email with your media kit / rate sheet (or shipping address), OR
+• Apply instantly on our creator portal: https://makeable.nyc/creators/apply
 
 Best regards,
 {sender_name}
