@@ -92,6 +92,7 @@ STRICT GUIDELINES:
    - Write like a genuine human reaching out 1-on-1, NOT a corporate bot.
    - Outline Option 1 (Paid Sponsored Campaign based on CPM/media kit) and Option 2 (Affiliate Partner + Free Product Box).
    - Provide next steps: reply to email OR apply at https://makeable.nyc/creators/apply.
+   - DO NOT write links in markdown double bracket form like [https://...](https://...). Write clean plain text URLs like https://makeable.nyc/creators/apply so they render as CTA buttons.
    - Sign-off:
      Warmly,
      ${senderName}

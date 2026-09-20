@@ -44,7 +44,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 load_dotenv(".env")
 load_dotenv("frontend/.env.local")
 
-RESEND_KEY = os.environ.get("RESEND_API_KEY_2") or os.environ.get("RESEND_API_KEY")
+RESEND_KEY = os.environ.get("RESEND_API_KEY_2")
 
 # 3 Target Domains (NO .nyc, NO .info)
 ACCOUNTS = [
@@ -202,10 +202,46 @@ https://makeable.nyc"""
     return subjects[hash_val % len(subjects)], body
 
 def send_email_resend(account: dict, to_email: str, subject: str, body: str) -> bool:
-    html_body = "".join([
-        f"<p style='margin-bottom: 14px; line-height: 1.6; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; color: #1e293b;'>{p.replace(chr(10), '<br/>')}</p>" 
-        for p in body.split("\n\n")
-    ])
+    formatted = body
+    # Convert markdown link formats like [Apply Online](url) or [https://...](https://...)
+    formatted = re.sub(r'\[([^\]]+)\]\((https?://[^\)]+)\)', lambda m: "[[CTA_BUTTON]]" if "makeable.nyc/creators/apply" in m.group(2) else f'<a href="{m.group(2)}" target="_blank" style="color: #4f46e5; font-weight: 600; text-decoration: underline;">{m.group(1)}</a>', formatted)
+    
+    # Convert bold **text** to <strong>
+    formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong style="color: #0f172a; font-weight: 700;">\1</strong>', formatted)
+    
+    # Convert bullet markers (* , - , • ) into clean styled bullets
+    formatted = re.sub(r'^[*•\-]\s+', r'<span style="color: #6366f1; font-weight: bold; margin-right: 6px;">•</span> ', formatted, flags=re.MULTILINE)
+    
+    # Convert standalone apply URLs to CTA button placeholder
+    formatted = re.sub(r'https?://makeable\.nyc/creators/apply', '[[CTA_BUTTON]]', formatted)
+    
+    # Convert remaining URLs to clickable links
+    formatted = re.sub(r'(?<!href=")(https?://[^\s<]+)(?![^<]*>)', r'<a href="\1" target="_blank" style="color: #4f46e5; font-weight: 600; text-decoration: underline;">\1</a>', formatted)
+
+    button_html = """
+    <div style="margin: 20px 0; text-align: left;">
+      <a href="https://makeable.nyc/creators/apply" target="_blank" style="background-color: #6366f1; color: #ffffff !important; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 14px; text-decoration: none; display: inline-block; box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);">
+        👉 Apply for Creator Collab Now
+      </a>
+    </div>
+    """
+
+    if "[[CTA_BUTTON]]" in formatted:
+        formatted = formatted.replace("[[CTA_BUTTON]]", button_html)
+
+    paragraphs = formatted.split("\n\n")
+    p_html = []
+    for p in paragraphs:
+        if 'href="https://makeable.nyc/creators/apply"' in p:
+            p_html.append(p)
+        else:
+            p_html.append(f"<p style='margin-bottom: 16px; margin-top: 0; line-height: 1.65; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; color: #334155;'>{p.replace(chr(10), '<br/>')}</p>")
+
+    html_body = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.65; color: #334155; max-width: 580px; margin: 0 auto;">
+      {''.join(p_html)}
+    </div>
+    """
 
     try:
         res = requests.post(

@@ -25,16 +25,19 @@ export async function POST(req: Request) {
     }
 
     const accounts = getConfiguredSenders();
+    let resendApiKey = process.env.RESEND_API_KEY_2 || (accounts.length > 0 ? accounts[0].apiKey : '');
+    
     let senderName = customSenderName || process.env.SENDER_NAME || signature?.senderName || 'MakeAble Partnerships';
-    let senderEmail = customSenderEmail || process.env.SENDER_EMAIL || 'partnerships@makeable.info';
-    let resendApiKey = process.env.RESEND_API_KEY;
+    let senderEmail = customSenderEmail || (accounts.length > 0 ? accounts[0].senderEmail : 'collab@makeable.work');
 
-    // Pick matching account key if customSenderEmail belongs to account 2
-    if (customSenderEmail) {
-      const matched = accounts.find(a => customSenderEmail.trim().toLowerCase().includes(a.senderEmail.split('@')[1] || ''));
+    // Pick matching account key and details if customSenderEmail belongs to one of our 3 active senders
+    if (customSenderEmail && accounts.length > 0) {
+      const domainPart = customSenderEmail.trim().toLowerCase().split('@')[1] || '';
+      const matched = accounts.find(a => a.senderEmail.toLowerCase().includes(domainPart));
       if (matched) {
         resendApiKey = matched.apiKey;
         senderName = customSenderName || matched.senderName;
+        senderEmail = matched.senderEmail;
       }
     }
 
@@ -44,27 +47,55 @@ export async function POST(req: Request) {
       finalBody += `\n\n---\n${signature.senderName}\n${signature.title ? signature.title + ' | ' : ''}${signature.brandName}\n${signature.website}\n${signature.phone || ''}`;
     }
 
-    // Helper to convert markdown text to rich email HTML
+    // Helper to convert markdown text to rich email HTML with CTA Button
     const renderEmailToHtml = (rawText: string) => {
       let formatted = rawText;
 
-      // 1. Convert bold **text** to <strong>
+      // 1. Convert markdown link formats like [Apply Online](url) or [https://...](https://...)
+      formatted = formatted.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, (match, text, url) => {
+        if (url.includes('makeable.nyc/creators/apply')) {
+          return `[[CTA_BUTTON]]`;
+        }
+        return `<a href="${url}" target="_blank" style="color: #4f46e5; font-weight: 600; text-decoration: underline;">${text}</a>`;
+      });
+
+      // 2. Convert bold **text** to <strong>
       formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #0f172a; font-weight: 700;">$1</strong>');
       
-      // 2. Convert bullet markers (* , - , • ) into clean styled bullets
+      // 3. Convert bullet markers (* , - , • ) into clean styled bullets
       formatted = formatted.replace(/^[*•\-]\s+/gm, '<span style="color: #6366f1; font-weight: bold; margin-right: 6px;">•</span> ');
       
-      // 3. Convert *text* to <em>
+      // 4. Convert *text* to <em>
       formatted = formatted.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
       
-      // 4. Convert URLs to clickable links
-      formatted = formatted.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color: #4f46e5; font-weight: 600; text-decoration: underline;">$1</a>');
+      // 5. Convert standalone apply URLs to CTA button placeholder
+      formatted = formatted.replace(/https?:\/\/makeable\.nyc\/creators\/apply/g, `[[CTA_BUTTON]]`);
       
-      // 5. Split by paragraphs and style
+      // 6. Convert remaining URLs to clickable links
+      formatted = formatted.replace(/(?<!href=")(https?:\/\/[^\s<]+)(?![^<]*>)/g, '<a href="$1" target="_blank" style="color: #4f46e5; font-weight: 600; text-decoration: underline;">$1</a>');
+      
+      const buttonHtml = `
+        <div style="margin: 20px 0; text-align: left;">
+          <a href="https://makeable.nyc/creators/apply" target="_blank" style="background-color: #6366f1; color: #ffffff !important; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 14px; text-decoration: none; display: inline-block; box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);">
+            👉 Apply for Creator Collab Now
+          </a>
+        </div>
+      `;
+
+      if (formatted.includes('[[CTA_BUTTON]]')) {
+        formatted = formatted.replace(/\[\[CTA_BUTTON\]\]/g, buttonHtml);
+      }
+
+      // 7. Split by paragraphs and style
       const paragraphs = formatted.split(/\n\n+/);
       return `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.65; color: #334155; max-width: 580px; margin: 0 auto;">
-          ${paragraphs.map(p => `<p style="margin-bottom: 16px; margin-top: 0; line-height: 1.65;">${p.replace(/\n/g, '<br/>')}</p>`).join('')}
+          ${paragraphs.map(p => {
+            if (p.includes('href="https://makeable.nyc/creators/apply"')) {
+              return p;
+            }
+            return `<p style="margin-bottom: 16px; margin-top: 0; line-height: 1.65;">${p.replace(/\n/g, '<br/>')}</p>`;
+          }).join('')}
         </div>
       `;
     };

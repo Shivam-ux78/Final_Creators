@@ -19,7 +19,7 @@ export function getConfiguredSenders() {
     label: string;
   }> = [];
 
-  const apiKey2 = process.env.RESEND_API_KEY_2 || process.env.RESEND_API_KEY || '';
+  const apiKey2 = process.env.RESEND_API_KEY_2 || '';
 
   if (apiKey2 && apiKey2.startsWith('re_')) {
     accounts.push({
@@ -211,8 +211,8 @@ async function runBackgroundBatch(options: {
 
       // Select sender account & email based on senderMode and 5-email rotation
       let activeSenderName = 'MakeAble Partnerships';
-      let activeSenderEmail = 'partnerships@makeable.info';
-      let activeApiKey = process.env.RESEND_API_KEY || '';
+      let activeSenderEmail = accounts.length > 0 ? accounts[0].senderEmail : 'collab@makeable.work';
+      let activeApiKey = process.env.RESEND_API_KEY_2 || process.env.RESEND_API_KEY || (accounts.length > 0 ? accounts[0].apiKey : '');
 
       if (senderMode === 'rotate' && accounts.length > 0) {
         const accountIdx = Math.floor(i / rotationInterval) % accounts.length;
@@ -377,14 +377,51 @@ https://makeable.nyc`
         try {
           const resendClient = new Resend(activeApiKey);
           let formatted = body;
+
+          // 1. Convert markdown link formats like [Apply Online](url) or [https://...](https://...)
+          formatted = formatted.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, (match, text, url) => {
+            if (url.includes('makeable.nyc/creators/apply')) {
+              return `[[CTA_BUTTON]]`;
+            }
+            return `<a href="${url}" target="_blank" style="color: #4f46e5; font-weight: 600; text-decoration: underline;">${text}</a>`;
+          });
+
+          // 2. Convert bold **text** to <strong>
           formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #0f172a; font-weight: 700;">$1</strong>');
+          
+          // 3. Convert bullet markers (* , - , • ) into clean styled bullets
           formatted = formatted.replace(/^[*•\-]\s+/gm, '<span style="color: #6366f1; font-weight: bold; margin-right: 6px;">•</span> ');
-          formatted = formatted.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color: #4f46e5; font-weight: 600; text-decoration: underline;">$1</a>');
+          
+          // 4. Convert *text* to <em>
+          formatted = formatted.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+          
+          // 5. Convert standalone apply URLs to CTA button placeholder
+          formatted = formatted.replace(/https?:\/\/makeable\.nyc\/creators\/apply/g, `[[CTA_BUTTON]]`);
+          
+          // 6. Convert remaining URLs to clickable links
+          formatted = formatted.replace(/(?<!href=")(https?:\/\/[^\s<]+)(?![^<]*>)/g, '<a href="$1" target="_blank" style="color: #4f46e5; font-weight: 600; text-decoration: underline;">$1</a>');
+          
+          const buttonHtml = `
+            <div style="margin: 20px 0; text-align: left;">
+              <a href="https://makeable.nyc/creators/apply" target="_blank" style="background-color: #6366f1; color: #ffffff !important; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 14px; text-decoration: none; display: inline-block; box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);">
+                👉 Apply for Creator Collab Now
+              </a>
+            </div>
+          `;
+
+          if (formatted.includes('[[CTA_BUTTON]]')) {
+            formatted = formatted.replace(/\[\[CTA_BUTTON\]\]/g, buttonHtml);
+          }
 
           const paragraphs = formatted.split(/\n\n+/);
           const htmlBody = `
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 15px; line-height: 1.65; color: #334155; max-width: 580px;">
-              ${paragraphs.map(p => `<p style="margin-bottom: 16px; margin-top: 0; line-height: 1.65;">${p.replace(/\n/g, '<br/>')}</p>`).join('')}
+              ${paragraphs.map(p => {
+                if (p.includes('href="https://makeable.nyc/creators/apply"')) {
+                  return p;
+                }
+                return `<p style="margin-bottom: 16px; margin-top: 0; line-height: 1.65;">${p.replace(/\n/g, '<br/>')}</p>`;
+              }).join('')}
             </div>
           `;
 

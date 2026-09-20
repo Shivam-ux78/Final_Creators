@@ -20,6 +20,7 @@ export default function EmailModal({
   signature
 }: EmailModalProps) {
   const [recipientEmail, setRecipientEmail] = useState('');
+  const [senderDomain, setSenderDomain] = useState('collab@makeable.work');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [commissionRate, setCommissionRate] = useState('15%');
@@ -156,7 +157,8 @@ export default function EmailModal({
           username: creator?.username || recipientEmail.split('@')[0],
           subject,
           body,
-          signature
+          signature,
+          customSenderEmail: senderDomain
         })
       });
       const data = await res.json();
@@ -219,19 +221,37 @@ export default function EmailModal({
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-4 flex-1 text-xs">
           
-          {/* Recipient Email Address Input */}
-          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
-            <label className="block font-bold text-slate-800 text-[11px] flex items-center space-x-1.5">
-              <Mail className="h-4 w-4 text-violet-600" />
-              <span>Recipient Email Address (Editable):</span>
-            </label>
-            <input
-              type="email"
-              value={recipientEmail}
-              onChange={(e) => setRecipientEmail(e.target.value)}
-              placeholder="e.g. creator@example.com"
-              className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-900 text-xs focus:ring-2 focus:ring-violet-500 focus:outline-none"
-            />
+          {/* Sender & Recipient Configuration */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+            <div className="space-y-1">
+              <label className="block font-bold text-slate-800 text-[11px] flex items-center space-x-1.5">
+                <Globe className="h-3.5 w-3.5 text-violet-600" />
+                <span>From Sending Address:</span>
+              </label>
+              <select
+                value={senderDomain}
+                onChange={(e) => setSenderDomain(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg font-mono font-semibold text-slate-900 text-xs focus:ring-2 focus:ring-violet-500 focus:outline-none"
+              >
+                <option value="collab@makeable.work">collab@makeable.work</option>
+                <option value="collab@makeable.website">collab@makeable.website</option>
+                <option value="collab@makeable.online">collab@makeable.online</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block font-bold text-slate-800 text-[11px] flex items-center space-x-1.5">
+                <Mail className="h-3.5 w-3.5 text-violet-600" />
+                <span>To Recipient Email Address:</span>
+              </label>
+              <input
+                type="email"
+                value={recipientEmail}
+                onChange={(e) => setRecipientEmail(e.target.value)}
+                placeholder="e.g. creator@example.com"
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-900 text-xs focus:ring-2 focus:ring-violet-500 focus:outline-none"
+              />
+            </div>
           </div>
 
           {/* Offer Strategy Details */}
