@@ -58,24 +58,6 @@ export default function Navbar({
             <div>
               <div className="flex items-center space-x-2">
                 <span className="font-bold text-lg text-slate-900 tracking-tight">MakeAble Outreach</span>
-                <span className="px-2 py-0.5 text-xs font-semibold bg-violet-100 text-violet-700 rounded-full border border-violet-200">
-                  Node v2.0
-                </span>
-                {isDbConnected ? (
-                  <span className="flex items-center space-x-1 px-2 py-0.5 text-[11px] font-bold bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200" title="Connected directly to Supabase PostgreSQL Database">
-                    <Database className="h-3 w-3 text-emerald-600" />
-                    <span>Supabase DB</span>
-                  </span>
-                ) : (
-                  <button
-                    onClick={onSyncDb}
-                    className="flex items-center space-x-1 px-2 py-0.5 text-[11px] font-bold bg-amber-50 text-amber-800 rounded-full border border-amber-200 hover:bg-amber-100 transition-colors"
-                    title="Click to sync data into Supabase table"
-                  >
-                    <Database className="h-3 w-3 text-amber-600" />
-                    <span>Setup Supabase</span>
-                  </button>
-                )}
               </div>
               <p className="text-xs text-slate-500 font-medium">Verified US Creator Discovery & Auto-Pitch</p>
             </div>
