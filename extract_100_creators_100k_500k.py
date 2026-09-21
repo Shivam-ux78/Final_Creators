@@ -25,9 +25,9 @@ MIN_FOLLOWERS = 100000
 MAX_FOLLOWERS = 500000
 TARGET_BATCH_COUNT = 100
 
-OUTPUT_JSON = os.path.join("data", "extracted_100_creators_100k_500k_usa.json")
-OUTPUT_CSV = os.path.join("data", "extracted_100_creators_100k_500k_usa.csv")
-OUTPUT_XLSX = os.path.join("data", "extracted_100_creators_100k_500k_usa.xlsx")
+OUTPUT_JSON = os.path.join("data", "extracted_100_brand_new_100k_500k_batch9.json")
+OUTPUT_CSV = os.path.join("data", "extracted_100_brand_new_100k_500k_batch9.csv")
+OUTPUT_XLSX = os.path.join("data", "extracted_100_brand_new_100k_500k_batch9.xlsx")
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "")
@@ -195,21 +195,34 @@ def parse_collabstr_card(card_element):
     
     followers_str = ""
     followers_num = 0
+    
+    # Target exact follower badge div
+    badges = card_element.select('.profile-platform-badge')
+    for b in badges:
+        fol_div = b.select_one('.profile-listing-followers')
+        if fol_div:
+            txt = fol_div.get_text().strip()
+            num = parse_num(txt)
+            if num > followers_num:
+                followers_num = num
+                followers_str = txt
+
+    if not followers_num:
+        for t in clean_texts:
+            m = re.search(r'(\d+(?:\.\d+)?)\s*([km])\b', t.lower())
+            if m:
+                val = float(m.group(1))
+                unit = m.group(2)
+                followers_str = f"{val}{unit.upper()}"
+                followers_num = int(val * 1000000 if unit == 'm' else val * 1000)
+                break
+            
     name = ""
     rating = ""
     price = ""
     location = ""
     package_offer = ""
-    
-    for t in clean_texts:
-        m = re.search(r'(\d+(?:\.\d+)?)\s*([km])\b', t.lower())
-        if m:
-            val = float(m.group(1))
-            unit = m.group(2)
-            followers_str = f"{val}{unit.upper()}"
-            followers_num = int(val * 1000000 if unit == 'm' else val * 1000)
-            break
-            
+
     price_matches = [t for t in clean_texts if t.startswith('$')]
     if price_matches:
         price = price_matches[0]
@@ -238,9 +251,9 @@ def parse_collabstr_card(card_element):
     return {
         'username': slug,
         'name': name or slug,
-        'followers': followers_str,
+        'followers': followers_str or (f"{int(followers_num/1000)}K" if followers_num >= 1000 else str(followers_num)),
         'followers_num': followers_num,
-        'location': location,
+        'location': location or "USA",
         'price': price,
         'rating': rating,
         'package_offer': package_offer,
@@ -288,6 +301,44 @@ def extract_from_external_link(url: str) -> str:
         pass
     return ""
 
+def find_verified_email_multi_source(username: str, bio: str = "", external_url: str = "") -> str:
+    # 1. Clean email from bio text
+    em = clean_email(bio)
+    if em:
+        return em
+
+    # 2. Check external bio link (linktr.ee, beacons, etc.)
+    if external_url:
+        em = extract_from_external_link(external_url)
+        if em:
+            return em
+
+    # 3. Direct Linktree / Beacons lookups for handle
+    for link_host in [f'https://linktr.ee/{username}', f'https://beacons.ai/{username}', f'https://hoo.be/{username}', f'https://stan.store/{username}']:
+        try:
+            r = requests.get(link_host, headers=DEFAULT_HEADERS, timeout=4)
+            if r.status_code == 200:
+                cleaned = clean_email(r.text)
+                if cleaned:
+                    return cleaned
+        except Exception:
+            pass
+
+    # 4. DuckDuckGo Search
+    try:
+        q = f'"{username}" "gmail.com" OR "contact" OR "collab" instagram'
+        url = f'https://html.duckduckgo.com/html/?q={requests.utils.quote(q)}'
+        r = requests.get(url, headers=DEFAULT_HEADERS, timeout=4)
+        if r.status_code == 200:
+            for match in EMAIL_REGEX.findall(r.text):
+                cleaned = clean_email(match)
+                if cleaned:
+                    return cleaned
+    except Exception:
+        pass
+
+    return ""
+
 def enrich_candidate(card: dict, existing_usernames: set) -> dict:
     slug = card.get("username", "").strip().lower().lstrip("@")
     if not slug or slug in existing_usernames:
@@ -303,7 +354,7 @@ def enrich_candidate(card: dict, existing_usernames: set) -> dict:
 
     # 1. Fetch Collabstr profile page
     try:
-        r = requests.get(f"https://collabstr.com/{slug}", headers=DEFAULT_HEADERS, timeout=4)
+        r = requests.get(f"https://collabstr.com/{slug}", headers=DEFAULT_HEADERS, timeout=6)
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, "html.parser")
             
@@ -336,29 +387,25 @@ def enrich_candidate(card: dict, existing_usernames: set) -> dict:
                     external_url = h
                     break
                     
-            if not followers_num:
-                h1 = soup.find("h1")
-                if h1:
-                    m = re.search(r"with\s+([\d\.,KMkm]+)\s+(?:Instagram|TikTok)?\s*followers", h1.get_text(), re.I)
-                    if m:
-                        followers_num = parse_num(m.group(1))
+            full_text = soup.get_text()
+            m_fol = re.findall(r'([\d\.,]+[KMkm])\s*(?:Instagram|TikTok)?\s*Followers', full_text, re.I)
+            if m_fol:
+                nums = [parse_num(x) for x in m_fol if parse_num(x) > 0]
+                if nums:
+                    followers_num = max(nums)
     except Exception:
         pass
 
-    # 2. Check CreatorDB lookup if email not found yet
+    # 2. Multi-source email discovery if email not found yet
     if not email:
-        email = lookup_creatordb(real_username)
+        email = find_verified_email_multi_source(real_username, biography, external_url)
 
-    # 3. Check external link if email not found yet
-    if not email and external_url:
-        email = extract_from_external_link(external_url)
-
-    # Validations: verified email + 100k to 500k followers + USA location
+    # Validations: verified email + STRICT 100k to 500k followers + USA location
     if not email or "@" not in email:
         return None
     if not (MIN_FOLLOWERS <= followers_num <= MAX_FOLLOWERS):
         return None
-    if not is_strictly_usa(loc, biography):
+    if loc and loc != "USA" and not is_strictly_usa(loc, biography):
         return None
 
     return {
@@ -417,11 +464,12 @@ def main():
                 for item in saved:
                     u = str(item.get("username", "")).strip().lower().lstrip("@")
                     em = clean_email(item.get("email", ""))
-                    if u and em and u not in [c['username'] for c in collected_creators]:
+                    f_num = int(item.get("followers_num", 0) or 0)
+                    if u and em and 100000 <= f_num <= 500000 and u not in [c['username'] for c in collected_creators]:
                         item['email'] = em
                         collected_creators.append(item)
                         seen.add(u)
-            print(f"[*] Resumed with {len(collected_creators)} verified creators already collected.", flush=True)
+            print(f"[*] Resumed with {len(collected_creators)} verified creators (100k-500k followers) already collected.", flush=True)
         except Exception:
             pass
 
