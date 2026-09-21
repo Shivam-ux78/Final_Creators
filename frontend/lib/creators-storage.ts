@@ -111,3 +111,35 @@ export async function getAllCreators() {
 
   return { creators: [], isFromDb: false };
 }
+
+// 4. Calculate deterministic daily limit per domain (starting 30 on 2026-09-20, +1 per day up to max 50)
+export function getDailyLimitInfo() {
+  const startDate = new Date('2026-09-20T00:00:00Z');
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+  const limitPerDomain = Math.min(30 + Math.max(0, diffDays), 50);
+  const totalDailyLimit = limitPerDomain * 3; // 3 active senders (.work, .website, .online)
+  return { limitPerDomain, totalDailyLimit, dayNumber: Math.max(1, diffDays + 1) };
+}
+
+// 5. Fetch number of creators emailed today directly from Supabase
+export async function getTodaySentCountFromSupabase(): Promise<number> {
+  try {
+    const todayStartIso = new Date(new Date().setUTCHours(0, 0, 0, 0)).toISOString();
+    const { data, error } = await supabase
+      .from('creators')
+      .select('id')
+      .eq('email_status', 'sent')
+      .gte('last_emailed_at', todayStartIso);
+
+    if (error) {
+      console.warn('Error fetching today sent count from Supabase:', error.message);
+      return 0;
+    }
+
+    return Array.isArray(data) ? data.length : 0;
+  } catch (e) {
+    console.warn('Failed to query Supabase today sent count:', e);
+    return 0;
+  }
+}

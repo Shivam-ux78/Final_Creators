@@ -102,19 +102,30 @@ def save_outreach_state(state: dict):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
 
-def check_and_update_daily_reset(state: dict) -> dict:
-    today_str = datetime.date.today().isoformat()
-    if state.get("last_reset_date") != today_str:
-        print(f"[📅 NEW DAY RESET] Transitioning to new day {today_str}...", flush=True)
-        state["last_reset_date"] = today_str
-        state["today_sent_per_domain"] = {a["email"]: 0 for a in ACCOUNTS}
-        # Warmup increment: +1 email per domain per day up to max cap 50
-        current_lim = state.get("current_day_limit_per_domain", INITIAL_DAILY_LIMIT_PER_DOMAIN)
-        new_lim = min(current_lim + 1, MAX_DAILY_LIMIT_PER_DOMAIN)
-        state["current_day_limit_per_domain"] = new_lim
-        print(f"[📈 WARMUP INCREMENT] New daily limit per domain: {new_lim} (Total: {new_lim * len(ACCOUNTS)} emails/day)", flush=True)
-        save_outreach_state(state)
-    return state
+def get_daily_limit_info() -> tuple:
+    start_date = datetime.date(2026, 9, 20)
+    today = datetime.date.today()
+    days_elapsed = max(0, (today - start_date).days)
+    limit_per_domain = min(30 + days_elapsed, 50)
+    total_daily_limit = limit_per_domain * len(ACCOUNTS)
+    return limit_per_domain, total_daily_limit
+
+def get_today_sent_count_supabase() -> int:
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return 0
+    try:
+        today_start_utc = datetime.datetime.utcnow().strftime("%Y-%m-%dT00:00:00.000Z")
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/creators?select=id&email_status=eq.sent&last_emailed_at=gte.{today_start_utc}",
+            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"},
+            timeout=10
+        )
+        if r.status_code == 200:
+            data = r.json()
+            return len(data) if isinstance(data, list) else 0
+    except Exception as e:
+        print(f"[!] Error fetching today sent count from Supabase: {e}", flush=True)
+    return 0
 
 def generate_pitch(creator: dict, sender_name: str) -> tuple:
     username = creator.get("username", "creator")
@@ -290,22 +301,18 @@ def run_continuous_outreach_loop():
             save_outreach_state(state)
             break
 
-        # 2. Check Daily Reset & Warmup Increment
-        state = check_and_update_daily_reset(state)
-        daily_limit = state.get("current_day_limit_per_domain", INITIAL_DAILY_LIMIT_PER_DOMAIN)
-        sent_dict = state.get("today_sent_per_domain", {})
+        # 2. Check Daily Limit & Warmup Status from Supabase
+        limit_per_domain, total_daily_limit = get_daily_limit_info()
+        today_sent_count = get_today_sent_count_supabase()
 
-        # 3. Check if today's daily limit is hit for all 3 domains
-        all_limits_hit = all(sent_dict.get(a["email"], 0) >= daily_limit for a in ACCOUNTS)
-
-        if all_limits_hit:
+        if today_sent_count >= total_daily_limit:
             now = datetime.datetime.now()
             tomorrow = datetime.datetime.combine(now.date() + datetime.timedelta(days=1), datetime.time(0, 5))
             seconds_until_midnight = int((tomorrow - now).total_seconds())
             hours_rem = round(seconds_until_midnight / 3600, 1)
 
-            print(f"\n💤 [DAILY LIMIT REACHED] Sent {daily_limit} emails per domain today ({daily_limit * len(ACCOUNTS)} total).", flush=True)
-            print(f"   Sleeping {hours_rem} hours until Midnight (00:05) for Auto-Resume with +1 daily limit increment...", flush=True)
+            print(f"\n💤 [DAILY LIMIT REACHED] Sent {today_sent_count}/{total_daily_limit} emails today ({limit_per_domain} emails/domain across {len(ACCOUNTS)} domains).", flush=True)
+            print(f"   Sleeping {hours_rem} hours until Midnight (00:05) for Auto-Resume (+1 daily warmup increment tomorrow)...", flush=True)
 
             # Sleep in 30-second checks so manual stop is immediately responsive
             for _ in range(0, seconds_until_midnight, 30):

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import OpenAI from 'openai';
 import { supabase } from '../../../lib/supabase';
-import { getAllCreators, recordEmailSent } from '../../../lib/creators-storage';
+import { getAllCreators, recordEmailSent, getDailyLimitInfo, getTodaySentCountFromSupabase } from '../../../lib/creators-storage';
 import fs from 'fs';
 import path from 'path';
 
@@ -199,6 +199,19 @@ async function runBackgroundBatch(options: {
         state.statusMessage = `Batch stopped by user. Sent ${state.sent} / ${state.total} emails across ${cycleNumber} cycle(s).`;
         saveBatchState(state);
         console.log('[Node Background Outreach] Batch stopped by user signal.');
+        return;
+      }
+
+      // Enforce daily per-domain limit based on Supabase DB records
+      const todaySentCount = await getTodaySentCountFromSupabase();
+      const { limitPerDomain, totalDailyLimit } = getDailyLimitInfo();
+
+      if (todaySentCount >= totalDailyLimit) {
+        state.isRunning = false;
+        state.isCooldown = false;
+        state.statusMessage = `💤 Daily limit reached (${limitPerDomain} emails/domain, ${totalDailyLimit} total today). Engine paused to protect domain reputation. Will auto-resume tomorrow at 00:05.`;
+        saveBatchState(state);
+        console.log(`[Node Background Outreach] Daily limit reached: ${todaySentCount}/${totalDailyLimit} emails sent today.`);
         return;
       }
 
