@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import fs from 'fs';
 import path from 'path';
 import { recordEmailSent, getTodaySentCountFromSupabase, getDailyLimitInfo } from '../../../../lib/creators-storage';
+import { validateAndRecordKeyUsage } from '../../../../lib/api-keys-storage';
 
 // 3 Configured Sender Domains
 const SENDER_ACCOUNTS = [
@@ -225,7 +226,26 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1. Daily Limit Check
+    // 0. API Key & Per-Key Daily Limit Check
+    const authHeader = req.headers.get('authorization');
+    const xApiKeyHeader = req.headers.get('x-api-key');
+    const providedApiKey = xApiKeyHeader || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : '') || bodyData.apiKey;
+
+    const keyValidation = validateAndRecordKeyUsage(providedApiKey);
+    if (!keyValidation.valid) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: keyValidation.error || 'API Key validation failed.',
+          keyName: keyValidation.keyItem?.name,
+          todaySentCount: keyValidation.keyItem?.todaySentCount,
+          dailyLimit: keyValidation.keyItem?.dailyLimit
+        },
+        { status: keyValidation.error?.includes('limit') ? 429 : 401 }
+      );
+    }
+
+    // 1. Overall System Daily Limit Check
     const { totalDailyLimit } = getDailyLimitInfo();
     const todaySentCount = await getTodaySentCountFromSupabase();
     if (todaySentCount >= totalDailyLimit) {

@@ -21,10 +21,11 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { name } = body;
+    const { name, dailyLimit } = body;
 
     const keyName = (name || 'Production API Key').trim();
-    const newKey = createNewApiKey(keyName);
+    const limitNum = typeof dailyLimit === 'number' && dailyLimit > 0 ? dailyLimit : Number(dailyLimit) || 100;
+    const newKey = createNewApiKey(keyName, limitNum);
 
     return NextResponse.json({
       success: true,

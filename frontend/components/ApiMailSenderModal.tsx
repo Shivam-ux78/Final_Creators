@@ -27,11 +27,15 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
     id: string;
     name: string;
     key: string;
+    dailyLimit: number;
+    todaySentCount?: number;
+    totalSentCount?: number;
     createdAt: string;
     status: 'active' | 'revoked';
   }>>([]);
 
   const [newKeyName, setNewKeyName] = useState('');
+  const [newKeyDailyLimit, setNewKeyDailyLimit] = useState('100');
   const [isCreatingKey, setIsCreatingKey] = useState(false);
   const [createdKeyNotice, setCreatedKeyNotice] = useState<string | null>(null);
 
@@ -101,12 +105,16 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
       const res = await fetch('/api/keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newKeyName.trim() || 'Production API Key' })
+        body: JSON.stringify({
+          name: newKeyName.trim() || 'Production API Key',
+          dailyLimit: Number(newKeyDailyLimit) || 100
+        })
       });
       const data = await res.json();
       if (data.success && data.apiKey) {
-        setCreatedKeyNotice(`Successfully generated key: ${data.apiKey.key}`);
+        setCreatedKeyNotice(`Successfully created key "${data.apiKey.name}" (Limit: ${data.apiKey.dailyLimit}/day): ${data.apiKey.key}`);
         setNewKeyName('');
+        setNewKeyDailyLimit('100');
         fetchStatsAndKeys();
       } else {
         alert(data.error || 'Failed to create API key.');
@@ -412,23 +420,37 @@ print(response.json())`;
                   Create a secure API key to share with external users or integrate into your third-party applications.
                 </p>
 
-                <form onSubmit={handleCreateApiKey} className="flex items-center space-x-3">
+                <form onSubmit={handleCreateApiKey} className="flex flex-col sm:flex-row items-center gap-3">
                   <input
                     type="text"
                     required
-                    placeholder="Enter Key Name (e.g., Marketing API Key, Client App)"
+                    placeholder="Key Name (e.g., Client App 1, Marketing Team)"
                     value={newKeyName}
                     onChange={(e) => setNewKeyName(e.target.value)}
-                    className="flex-1 px-3.5 py-2 text-xs border border-slate-700 bg-slate-800/80 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400 font-medium"
+                    className="w-full sm:flex-1 px-3.5 py-2 text-xs border border-slate-700 bg-slate-800/80 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400 font-medium"
                   />
-                  <button
-                    type="submit"
-                    disabled={isCreatingKey}
-                    className="px-4 py-2 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl shadow-sm transition-all flex items-center space-x-1.5 disabled:opacity-50 shrink-0"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span>{isCreatingKey ? 'Generating...' : '+ Create API Key'}</span>
-                  </button>
+                  <div className="flex items-center space-x-2 w-full sm:w-auto">
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      max={10000}
+                      placeholder="Daily Limit"
+                      value={newKeyDailyLimit}
+                      onChange={(e) => setNewKeyDailyLimit(e.target.value)}
+                      className="w-28 px-3 py-2 text-xs border border-slate-700 bg-slate-800/80 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400 font-bold"
+                      title="Set Daily Sending Limit for this API Key"
+                    />
+                    <span className="text-[11px] text-slate-400 whitespace-nowrap hidden sm:inline">emails/day</span>
+                    <button
+                      type="submit"
+                      disabled={isCreatingKey}
+                      className="px-4 py-2 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl shadow-sm transition-all flex items-center space-x-1.5 disabled:opacity-50 shrink-0"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>{isCreatingKey ? 'Generating...' : '+ Create API Key'}</span>
+                    </button>
+                  </div>
                 </form>
 
                 {createdKeyNotice && (
@@ -454,7 +476,7 @@ print(response.json())`;
                   {apiKeysList.map((k) => (
                     <div
                       key={k.id}
-                      className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-4"
+                      className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                     >
                       <div className="space-y-1 truncate">
                         <div className="flex items-center space-x-2">
@@ -468,9 +490,15 @@ print(response.json())`;
                           >
                             {k.status.toUpperCase()}
                           </span>
+                          <span className="px-2 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold">
+                            Limit: {k.dailyLimit || 100} / day
+                          </span>
                         </div>
                         <p className="text-xs font-mono text-slate-600 font-semibold truncate">{k.key}</p>
-                        <p className="text-[11px] text-slate-400">Created: {new Date(k.createdAt).toLocaleString()}</p>
+                        <div className="flex items-center space-x-4 text-[11px] text-slate-400">
+                          <span>Created: {new Date(k.createdAt).toLocaleDateString()}</span>
+                          <span>Today Sent: <strong className="text-slate-700 font-semibold">{k.todaySentCount || 0} / {k.dailyLimit || 100}</strong></span>
+                        </div>
                       </div>
 
                       <div className="flex items-center space-x-2 shrink-0">
