@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 
 const AUTH_COOKIE_NAME = 'makeable_auth_token';
 
-// Public endpoints and static assets that bypass authentication
+// Public endpoints and static assets that bypass cookie authentication
 const PUBLIC_PATHS = [
   '/login',
   '/health',
@@ -12,6 +12,7 @@ const PUBLIC_PATHS = [
   '/api/auth/logout',
   '/api/auth/status',
   '/api/auth/sso',
+  '/api/v1/send-mail',
   '/favicon.ico'
 ];
 
@@ -27,7 +28,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. If an SSO token is provided in the query string, route to /api/auth/sso using request.nextUrl.clone()
+  // 2. If an SSO token is provided in the query string, route to /api/auth/sso
   const ssoToken = searchParams.get('sso_token') || searchParams.get('token');
   if (ssoToken && pathname !== '/api/auth/sso') {
     const ssoUrl = request.nextUrl.clone();
@@ -43,8 +44,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(ssoUrl);
   }
 
-  // 3. Allow explicitly defined public routes
-  if (PUBLIC_PATHS.some(path => pathname === path || pathname.startsWith(path + '/'))) {
+  // 3. Allow explicitly defined public routes and API v1 endpoints
+  if (
+    PUBLIC_PATHS.some(path => pathname === path || pathname.startsWith(path + '/')) ||
+    pathname.startsWith('/api/v1/')
+  ) {
     // If user is already authenticated and visits /login, redirect to dashboard /
     if (pathname === '/login') {
       const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
@@ -60,12 +64,19 @@ export function middleware(request: NextRequest) {
 
   // 4. Protect all other pages and API endpoints
   const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
+  const xApiKey = request.headers.get('x-api-key');
+  const authHeader = request.headers.get('authorization');
+
+  // Allow API requests authenticated via API Key header
+  if (pathname.startsWith('/api/') && (xApiKey || authHeader)) {
+    return NextResponse.next();
+  }
 
   if (!token || token.length < 20) {
     // For API routes, return 401 Unauthorized
     if (pathname.startsWith('/api/')) {
       return NextResponse.json(
-        { success: false, error: 'Unauthorized. Please login to access this API.' },
+        { success: false, error: 'Unauthorized. Please login or provide a valid API Key via x-api-key header.' },
         { status: 401 }
       );
     }
