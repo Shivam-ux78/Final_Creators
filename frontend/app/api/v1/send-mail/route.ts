@@ -1,9 +1,24 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { Resend } from 'resend';
 import fs from 'fs';
 import path from 'path';
 import { recordEmailSent, getTodaySentCountFromSupabase, getDailyLimitInfo } from '../../../../lib/creators-storage';
 import { validateAndRecordKeyUsage } from '../../../../lib/api-keys-storage';
+import { verifySessionToken, AUTH_COOKIE_NAME } from '../../../../lib/auth';
+import { getSuppression } from '../../../../lib/suppressions';
+
+// Logged-in dashboard users may send and edit presets without an API key
+function hasDashboardSession(): boolean {
+  return verifySessionToken(cookies().get(AUTH_COOKIE_NAME)?.value).valid;
+}
+
+function presetsUnauthorized() {
+  return NextResponse.json(
+    { success: false, error: 'Unauthorized. Log in to the dashboard to update preset subjects.' },
+    { status: 401 }
+  );
+}
 
 // 3 Configured Sender Domains
 const SENDER_ACCOUNTS = [
@@ -142,6 +157,8 @@ export async function GET() {
 // PUT: Update Preset Subjects List
 export async function PUT(req: Request) {
   try {
+    if (!hasDashboardSession()) return presetsUnauthorized();
+
     const body = await req.json();
     const { subjects } = body;
 
@@ -181,6 +198,7 @@ export async function POST(req: Request) {
 
     // Handle Config Update Action via POST
     if (bodyData.action === 'update_presets' || (Array.isArray(bodyData.subjects) && !bodyData.toEmail && !bodyData.to_email)) {
+      if (!hasDashboardSession()) return presetsUnauthorized();
       const { subjects } = bodyData;
       if (!Array.isArray(subjects) || subjects.length === 0) {
         return NextResponse.json(
@@ -226,12 +244,14 @@ export async function POST(req: Request) {
       );
     }
 
-    // 0. API Key & Per-Key Daily Limit Check
+    // 0. API Key & Per-Key Daily Limit Check (dashboard session may send without a key)
     const authHeader = req.headers.get('authorization');
     const xApiKeyHeader = req.headers.get('x-api-key');
     const providedApiKey = xApiKeyHeader || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : '') || bodyData.apiKey;
 
-    const keyValidation = validateAndRecordKeyUsage(providedApiKey);
+    const keyValidation = providedApiKey || !hasDashboardSession()
+      ? validateAndRecordKeyUsage(providedApiKey)
+      : { valid: true } as ReturnType<typeof validateAndRecordKeyUsage>;
     if (!keyValidation.valid) {
       return NextResponse.json(
         {
@@ -242,6 +262,15 @@ export async function POST(req: Request) {
           dailyLimit: keyValidation.keyItem?.dailyLimit
         },
         { status: keyValidation.error?.includes('limit') ? 429 : 401 }
+      );
+    }
+
+    // 0b. Suppression List Check (fails closed if the list can't be read)
+    const suppression = await getSuppression(recipientEmail);
+    if (suppression) {
+      return NextResponse.json(
+        { success: false, error: `${recipientEmail} is on the suppression list. Email not sent.`, suppressed: true },
+        { status: 409 }
       );
     }
 

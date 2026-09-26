@@ -28,3 +28,6 @@
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# API keys store (secrets - never commit)
+.api_keys_store.json

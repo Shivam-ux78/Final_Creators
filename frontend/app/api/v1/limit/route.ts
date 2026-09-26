@@ -30,20 +30,6 @@ function resolveApiKeyLimitInfo(providedKey?: string | null) {
         resetAt: tomorrowReset
       };
     }
-
-    if (cleanKey.startsWith('re_')) {
-      return {
-        isKeySpecific: true,
-        keyFound: true,
-        keyName: 'Resend System API Key',
-        apiKey: cleanKey,
-        dailyLimit: 1000,
-        todaySentCount: 0,
-        remainingQuota: 1000,
-        status: 'active',
-        resetAt: tomorrowReset
-      };
-    }
   }
 
   return { isKeySpecific: false, keyFound: false };

@@ -106,6 +106,30 @@ export function revokeApiKey(id: string): boolean {
   return saveStoredApiKeys(updated);
 }
 
+export function rotateApiKey(id: string): ApiKeyItem | null {
+  const keys = getStoredApiKeys();
+  let rotatedItem: ApiKeyItem | null = null;
+
+  const updated = keys.map(k => {
+    if (k.id === id) {
+      rotatedItem = {
+        ...k,
+        key: 'mk_live_' + crypto.randomBytes(16).toString('hex'),
+        createdAt: new Date().toISOString(),
+        todaySentCount: 0,
+        status: 'active' as const
+      };
+      return rotatedItem;
+    }
+    return k;
+  });
+
+  if (rotatedItem) {
+    saveStoredApiKeys(updated);
+  }
+  return rotatedItem;
+}
+
 // Validate Key and Enforce Per-Key Daily Limit
 export function validateAndRecordKeyUsage(keyString: string): {
   valid: boolean;
@@ -113,7 +137,7 @@ export function validateAndRecordKeyUsage(keyString: string): {
   keyItem?: ApiKeyItem;
 } {
   if (!keyString || !keyString.trim()) {
-    return { valid: true }; // No key provided, fallback to standard route limits
+    return { valid: false, error: 'An API Key is required. Provide it via the x-api-key header.' };
   }
 
   const cleanKey = keyString.trim();
@@ -121,10 +145,6 @@ export function validateAndRecordKeyUsage(keyString: string): {
   const keyItem = keys.find(k => k.key === cleanKey);
 
   if (!keyItem) {
-    // If it's a Resend API Key (starts with re_), allow it through
-    if (cleanKey.startsWith('re_')) {
-      return { valid: true };
-    }
     return { valid: false, error: 'Invalid API Key provided.' };
   }
 

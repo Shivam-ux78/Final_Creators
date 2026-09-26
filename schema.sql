@@ -67,3 +67,25 @@ ON public.creators
 FOR ALL 
 USING (true) 
 WITH CHECK (true);
+
+-- ==============================================================================
+-- EMAIL SUPPRESSION LIST
+-- Checked by /api/v1/send-mail before every send (fails closed if unreadable).
+-- Managed via the MCP connector tools add_suppression / list_suppressions.
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.email_suppressions (
+    email TEXT PRIMARY KEY, -- stored lowercase
+    reason TEXT DEFAULT '',
+    source TEXT DEFAULT '',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_suppressions_created_at ON public.email_suppressions(created_at);
+
+ALTER TABLE public.email_suppressions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow all operations on email_suppressions"
+ON public.email_suppressions
+FOR ALL
+USING (true)
+WITH CHECK (true);

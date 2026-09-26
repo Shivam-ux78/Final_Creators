@@ -143,6 +143,24 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
     }
   };
 
+  const handleRotateKey = async (id: string) => {
+    if (!confirm('Are you sure you want to rotate this API key? The old key string will be immediately invalidated and replaced with a new random key.')) return;
+    try {
+      const res = await fetch('/api/keys', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      const data = await res.json();
+      if (data.success && data.rotatedKey) {
+        setCreatedKeyNotice(`Rotated key "${data.rotatedKey.name}": ${data.rotatedKey.key}`);
+        fetchStatsAndKeys();
+      }
+    } catch (err: any) {
+      alert('Failed to rotate key.');
+    }
+  };
+
   const handleTestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!toEmail || !body) {
@@ -510,12 +528,23 @@ print(response.json())`;
                           <span>{copiedCode === k.id ? 'Copied!' : 'Copy'}</span>
                         </button>
                         {k.status === 'active' && (
-                          <button
-                            onClick={() => handleRevokeKey(k.id)}
-                            className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors"
-                          >
-                            Revoke Key
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleRotateKey(k.id)}
+                              className="px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-lg transition-colors flex items-center space-x-1"
+                              title="Generate a new key string & invalidate old key"
+                            >
+                              <RefreshCw className="h-3.5 w-3.5 text-emerald-700" />
+                              <span>Rotate</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleRevokeKey(k.id)}
+                              className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors"
+                            >
+                              Revoke
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>

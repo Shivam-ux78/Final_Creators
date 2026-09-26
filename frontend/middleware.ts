@@ -14,6 +14,8 @@ const PUBLIC_PATHS = [
   '/api/auth/sso',
   '/api/v1/send-mail',
   '/api/v1/limit',
+  '/api/mcp', // MCP connector: authenticates its own OAuth bearer tokens
+  '/api/oauth', // OAuth endpoints for the MCP connector (authorize checks the session itself)
   '/favicon.ico'
 ];
 

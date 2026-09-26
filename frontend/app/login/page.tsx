@@ -64,6 +64,11 @@ function LoginForm() {
       const data = await res.json();
 
       if (res.ok && data.success) {
+        if (from.startsWith('/api/') && !from.startsWith('//')) {
+          // API routes (e.g. the MCP connector OAuth consent screen) need a full page load
+          window.location.assign(from);
+          return;
+        }
         router.push(from);
         router.refresh();
       } else {
