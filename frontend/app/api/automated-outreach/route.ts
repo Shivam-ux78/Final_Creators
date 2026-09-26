@@ -3,52 +3,12 @@ import { Resend } from 'resend';
 import OpenAI from 'openai';
 import { supabase } from '../../../lib/supabase';
 import { getAllCreators, recordEmailSent, getDailyLimitInfo, getTodaySentCountFromSupabase } from '../../../lib/creators-storage';
+import { getConfiguredSenders } from '../../../lib/senders-config';
 import fs from 'fs';
 import path from 'path';
 
 // Persistent State file path
 const STATE_FILE = path.join(process.cwd(), '.batch_outreach_state.json');
-
-// Helper to get all configured Resend accounts (Targeting .work, .website, .online under RESEND_API_KEY_2)
-export function getConfiguredSenders() {
-  const accounts: Array<{
-    id: string;
-    apiKey: string;
-    senderName: string;
-    senderEmail: string;
-    label: string;
-  }> = [];
-
-  const apiKey2 = process.env.RESEND_API_KEY_2 || '';
-
-  if (apiKey2 && apiKey2.startsWith('re_')) {
-    accounts.push({
-      id: 'sender_work',
-      apiKey: apiKey2,
-      senderName: process.env.SENDER_NAME || 'MakeAble Partnerships',
-      senderEmail: 'collab@makeable.work',
-      label: 'MakeAble Partnerships (collab@makeable.work)'
-    });
-
-    accounts.push({
-      id: 'sender_website',
-      apiKey: apiKey2,
-      senderName: process.env.SENDER_NAME || 'MakeAble Partnerships',
-      senderEmail: 'collab@makeable.website',
-      label: 'MakeAble Partnerships (collab@makeable.website)'
-    });
-
-    accounts.push({
-      id: 'sender_online',
-      apiKey: apiKey2,
-      senderName: process.env.SENDER_NAME || 'MakeAble Partnerships',
-      senderEmail: 'collab@makeable.online',
-      label: 'MakeAble Partnerships (collab@makeable.online)'
-    });
-  }
-
-  return accounts;
-}
 
 // Helper to read state
 function getBatchState() {

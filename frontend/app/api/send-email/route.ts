@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import { recordEmailSent, getTodaySentCountFromSupabase, getDailyLimitInfo } from '../../../lib/creators-storage';
-import { getConfiguredSenders } from '../automated-outreach/route';
+import { getConfiguredSenders } from '../../../lib/senders-config';
 
 // GET: Check live daily email sending stats, limit, and remaining quota
 export async function GET() {

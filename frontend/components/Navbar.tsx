@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, Mail, ShieldCheck, Settings, Database, Instagram, RefreshCw, LogOut, Code } from 'lucide-react';
+import { Sparkles, Mail, ShieldCheck, Settings, Database, Instagram, RefreshCw, LogOut, Code, Key } from 'lucide-react';
 
 interface NavbarProps {
   onOpenSettings: () => void;
@@ -91,15 +91,15 @@ export default function Navbar({
               </button>
             )}
 
-            {/* API Mail Sender Button */}
+            {/* API Keys & Mailer Button */}
             {onOpenApiModal && (
               <button
                 onClick={onOpenApiModal}
-                className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-all shadow-xs"
-                title="API Mail Sender Console & Docs"
+                className="flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-bold text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-400 rounded-lg transition-all shadow-sm"
+                title="Create API Keys & Round-Robin Mailer"
               >
-                <Code className="h-4 w-4 text-emerald-600" />
-                <span>API Mail Sender</span>
+                <Key className="h-4 w-4 text-emerald-700" />
+                <span>API Keys & Mailer</span>
               </button>
             )}
 

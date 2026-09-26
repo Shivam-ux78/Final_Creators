@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Code, Send, CheckCircle2, AlertCircle, Copy, Terminal, Server, Key, Zap, Layers, Activity, RefreshCw, Edit3, Plus, Trash2, Save } from 'lucide-react';
+import { X, Code, Send, CheckCircle2, AlertCircle, Copy, Terminal, Server, Key, Zap, Layers, Activity, RefreshCw, Edit3, Plus, Trash2, Save, Lock, ShieldCheck } from 'lucide-react';
 
 interface ApiMailSenderModalProps {
   isOpen: boolean;
@@ -9,7 +9,7 @@ interface ApiMailSenderModalProps {
 }
 
 export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderModalProps) {
-  const [activeTab, setActiveTab] = useState<'tester' | 'presets' | 'docs' | 'stats'>('tester');
+  const [activeTab, setActiveTab] = useState<'tester' | 'keys' | 'presets' | 'docs' | 'stats'>('keys');
   
   // Live API Stats
   const [stats, setStats] = useState<{
@@ -22,7 +22,18 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
     remainingQuota: number;
   } | null>(null);
 
-  const [loadingStats, setLoadingStats] = useState(false);
+  // API Keys state
+  const [apiKeysList, setApiKeysList] = useState<Array<{
+    id: string;
+    name: string;
+    key: string;
+    createdAt: string;
+    status: 'active' | 'revoked';
+  }>>([]);
+
+  const [newKeyName, setNewKeyName] = useState('');
+  const [isCreatingKey, setIsCreatingKey] = useState(false);
+  const [createdKeyNotice, setCreatedKeyNotice] = useState<string | null>(null);
 
   // Tester Form state
   const [toEmail, setToEmail] = useState('');
@@ -41,40 +52,88 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   const [responseStatus, setResponseStatus] = useState<number | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  const fetchStats = async () => {
-    setLoadingStats(true);
+  const fetchStatsAndKeys = async () => {
     try {
-      const res = await fetch('/api/v1/send-mail');
-      const data = await res.json();
-      if (data.success) {
-        const subjects = data.presetSubjects || [
+      // Fetch stats
+      const resStats = await fetch('/api/v1/send-mail');
+      const dataStats = await resStats.json();
+      if (dataStats.success) {
+        const subjects = dataStats.presetSubjects || [
           'Paid Collab & Partnership Offer ✨',
           'MakeAble x Creator Partnership — Sponsored & Affiliate Offer 🤝',
           'Exclusive Creator Collab (Paid Sponsorship + Free Gifting Kit) 📦'
         ];
         setStats({
-          service: data.service,
-          rotationOrder: data.rotationOrder || ['collab@makeable.work', 'collab@makeable.website', 'collab@makeable.online'],
-          currentNextSender: data.currentNextSender || 'collab@makeable.work',
+          service: dataStats.service,
+          rotationOrder: dataStats.rotationOrder || ['collab@makeable.work', 'collab@makeable.website', 'collab@makeable.online'],
+          currentNextSender: dataStats.currentNextSender || 'collab@makeable.work',
           presetSubjects: subjects,
-          todaySentCount: data.todaySentCount || 0,
-          dailyLimit: data.dailyLimit || 150,
-          remainingQuota: data.remainingQuota || 0
+          todaySentCount: dataStats.todaySentCount || 0,
+          dailyLimit: dataStats.dailyLimit || 150,
+          remainingQuota: dataStats.remainingQuota || 0
         });
         setPresetSubjectsList(subjects);
       }
+
+      // Fetch API Keys
+      const resKeys = await fetch('/api/keys');
+      const dataKeys = await resKeys.json();
+      if (dataKeys.success && Array.isArray(dataKeys.keys)) {
+        setApiKeysList(dataKeys.keys);
+      }
     } catch (e) {
-      console.warn('Error loading mail sender stats:', e);
-    } finally {
-      setLoadingStats(false);
+      console.warn('Error fetching API stats and keys:', e);
     }
   };
 
   useEffect(() => {
     if (isOpen) {
-      fetchStats();
+      fetchStatsAndKeys();
     }
   }, [isOpen]);
+
+  const handleCreateApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCreatingKey(true);
+    setCreatedKeyNotice(null);
+
+    try {
+      const res = await fetch('/api/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newKeyName.trim() || 'Production API Key' })
+      });
+      const data = await res.json();
+      if (data.success && data.apiKey) {
+        setCreatedKeyNotice(`Successfully generated key: ${data.apiKey.key}`);
+        setNewKeyName('');
+        fetchStatsAndKeys();
+      } else {
+        alert(data.error || 'Failed to create API key.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error creating API key.');
+    } finally {
+      setIsCreatingKey(false);
+    }
+  };
+
+  const handleRevokeKey = async (id: string) => {
+    if (!confirm('Are you sure you want to revoke this API key?')) return;
+    try {
+      const res = await fetch('/api/keys', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchStatsAndKeys();
+      }
+    } catch (err: any) {
+      alert('Failed to revoke key.');
+    }
+  };
 
   const handleTestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,7 +167,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
       const data = await res.json();
       setResponseStatus(res.status);
       setApiResponse(data);
-      fetchStats();
+      fetchStatsAndKeys();
     } catch (err: any) {
       setResponseStatus(500);
       setApiResponse({ success: false, error: err.message || 'Failed to dispatch request' });
@@ -143,7 +202,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
       const data = await res.json();
       if (data.success) {
         setPresetSaveNotice('Preset subjects configuration successfully updated!');
-        fetchStats();
+        fetchStatsAndKeys();
         setTimeout(() => setPresetSaveNotice(null), 3000);
       } else {
         alert(data.error || 'Failed to update preset subjects.');
@@ -163,8 +222,11 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
 
   if (!isOpen) return null;
 
+  const activeKeySample = apiKeysList.find(k => k.status === 'active')?.key || 'mk_live_123456789abcdef';
+
   const curlCode = `curl -X POST http://localhost:3000/api/v1/send-mail \\
   -H "Content-Type: application/json" \\
+  -H "x-api-key: ${activeKeySample}" \\
   -d '{
     "toEmail": "${toEmail || 'recipient@example.com'}",
     "subject": "${subject || 'Custom Subject Line Here (Optional)'}",
@@ -174,7 +236,8 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   const jsCode = `const response = await fetch('http://localhost:3000/api/v1/send-mail', {
   method: 'POST',
   headers: {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'x-api-key': '${activeKeySample}'
   },
   body: JSON.stringify({
     toEmail: '${toEmail || 'recipient@example.com'}',
@@ -189,13 +252,17 @@ console.log(data);`;
   const pythonCode = `import requests
 
 url = "http://localhost:3000/api/v1/send-mail"
+headers = {
+    "Content-Type": "application/json",
+    "x-api-key": "${activeKeySample}"
+}
 payload = {
     "toEmail": "${toEmail || 'recipient@example.com'}",
     "subject": "${subject || 'Custom Subject Line Here (Optional)'}",
     "body": "${body.replace(/\n/g, '\\n') || 'Hi there!'}"
 }
 
-response = requests.post(url, json=payload)
+response = requests.post(url, json=payload, headers=headers)
 print(response.json())`;
 
   return (
@@ -206,17 +273,17 @@ print(response.json())`;
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
           <div className="flex items-center space-x-3">
             <div className="h-10 w-10 rounded-xl bg-violet-600/30 border border-violet-400/30 flex items-center justify-center text-violet-400">
-              <RefreshCw className="h-5 w-5" />
+              <Key className="h-5 w-5" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h2 className="text-xl font-extrabold tracking-tight">Round-Robin Mail Sender API</h2>
+                <h2 className="text-xl font-extrabold tracking-tight">API Mail Sender & Key Manager</h2>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold">
                   1 ➔ 2 ➔ 3 Auto-Rotation
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Pass destination email, optional custom subject & body. Rotates domains: <code>.work</code> ➔ <code>.website</code> ➔ <code>.online</code>.
+                Generate API Keys & send emails programmatically. Rotates domains: <code>.work</code> ➔ <code>.website</code> ➔ <code>.online</code>.
               </p>
             </div>
           </div>
@@ -258,6 +325,18 @@ print(response.json())`;
 
         {/* Navigation Tabs */}
         <div className="flex border-b border-slate-200 bg-white px-6 shrink-0 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('keys')}
+            className={`px-4 py-3 text-xs font-bold border-b-2 transition-all flex items-center space-x-2 whitespace-nowrap ${
+              activeTab === 'keys'
+                ? 'border-violet-600 text-violet-600 bg-violet-50/50'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Key className="h-3.5 w-3.5" />
+            <span>Create & Manage API Keys ({apiKeysList.filter(k => k.status === 'active').length})</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('tester')}
             className={`px-4 py-3 text-xs font-bold border-b-2 transition-all flex items-center space-x-2 whitespace-nowrap ${
@@ -309,6 +388,106 @@ print(response.json())`;
 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
+
+          {/* TAB 0: CREATE & MANAGE API KEYS */}
+          {activeTab === 'keys' && (
+            <div className="space-y-6">
+              
+              {/* Create API Key Box */}
+              <div className="p-5 rounded-2xl bg-gradient-to-r from-violet-900 via-indigo-900 to-slate-900 text-white shadow-md">
+                <div className="flex items-center space-x-2.5 mb-2">
+                  <Key className="h-5 w-5 text-violet-400" />
+                  <h3 className="text-sm font-bold tracking-tight">Generate New API Key</h3>
+                </div>
+                <p className="text-xs text-slate-300 mb-4">
+                  Create a secure API key to share with external users or integrate into your third-party applications.
+                </p>
+
+                <form onSubmit={handleCreateApiKey} className="flex items-center space-x-3">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter Key Name (e.g., Marketing API Key, Client App)"
+                    value={newKeyName}
+                    onChange={(e) => setNewKeyName(e.target.value)}
+                    className="flex-1 px-3.5 py-2 text-xs border border-slate-700 bg-slate-800/80 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400 font-medium"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isCreatingKey}
+                    className="px-4 py-2 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl shadow-sm transition-all flex items-center space-x-1.5 disabled:opacity-50 shrink-0"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>{isCreatingKey ? 'Generating...' : '+ Create API Key'}</span>
+                  </button>
+                </form>
+
+                {createdKeyNotice && (
+                  <div className="mt-4 p-3 bg-emerald-500/20 border border-emerald-400/40 rounded-xl text-emerald-300 text-xs font-mono font-semibold flex items-center justify-between">
+                    <span className="truncate">{createdKeyNotice}</span>
+                    <button
+                      onClick={() => copyToClipboard(createdKeyNotice.split(': ')[1] || '', 'newkey')}
+                      className="ml-2 px-2 py-1 bg-emerald-500/30 hover:bg-emerald-500/50 rounded text-[11px] text-white shrink-0"
+                    >
+                      {copiedCode === 'newkey' ? 'Copied!' : 'Copy Key'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Existing API Keys Table */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">
+                  Your Active & Generated API Keys ({apiKeysList.length})
+                </h4>
+
+                <div className="space-y-3">
+                  {apiKeysList.map((k) => (
+                    <div
+                      key={k.id}
+                      className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-4"
+                    >
+                      <div className="space-y-1 truncate">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-bold text-slate-900">{k.name}</span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              k.status === 'active'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-rose-100 text-rose-800 border border-rose-200'
+                            }`}
+                          >
+                            {k.status.toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="text-xs font-mono text-slate-600 font-semibold truncate">{k.key}</p>
+                        <p className="text-[11px] text-slate-400">Created: {new Date(k.createdAt).toLocaleString()}</p>
+                      </div>
+
+                      <div className="flex items-center space-x-2 shrink-0">
+                        <button
+                          onClick={() => copyToClipboard(k.key, k.id)}
+                          className="px-3 py-1.5 text-xs font-semibold text-violet-700 bg-violet-100 hover:bg-violet-200 rounded-lg transition-colors flex items-center space-x-1"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          <span>{copiedCode === k.id ? 'Copied!' : 'Copy'}</span>
+                        </button>
+                        {k.status === 'active' && (
+                          <button
+                            onClick={() => handleRevokeKey(k.id)}
+                            className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors"
+                          >
+                            Revoke Key
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          )}
           
           {/* TAB 1: INTERACTIVE API TESTER */}
           {activeTab === 'tester' && (
