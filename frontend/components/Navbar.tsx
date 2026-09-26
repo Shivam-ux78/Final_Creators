@@ -2,13 +2,14 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, Mail, ShieldCheck, Settings, Database, Instagram, RefreshCw, LogOut } from 'lucide-react';
+import { Sparkles, Mail, ShieldCheck, Settings, Database, Instagram, RefreshCw, LogOut, Code } from 'lucide-react';
 
 interface NavbarProps {
   onOpenSettings: () => void;
   onOpenGuide: () => void;
   onOpenBatch: () => void;
   onOpenSingleEmail?: () => void;
+  onOpenApiModal?: () => void;
   onSyncDb?: () => void;
   isDbConnected: boolean;
   totalCount: number;
@@ -21,6 +22,7 @@ export default function Navbar({
   onOpenGuide,
   onOpenBatch,
   onOpenSingleEmail,
+  onOpenApiModal,
   onSyncDb,
   isDbConnected,
   totalCount,
@@ -89,6 +91,18 @@ export default function Navbar({
               </button>
             )}
 
+            {/* API Mail Sender Button */}
+            {onOpenApiModal && (
+              <button
+                onClick={onOpenApiModal}
+                className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-all shadow-xs"
+                title="API Mail Sender Console & Docs"
+              >
+                <Code className="h-4 w-4 text-emerald-600" />
+                <span>API Mail Sender</span>
+              </button>
+            )}
+
             {/* Single Custom Email Dispatch Button */}
             {onOpenSingleEmail && (
               <button
@@ -97,7 +111,7 @@ export default function Navbar({
                 title="Send or Enhance Single Custom Email"
               >
                 <Mail className="h-4 w-4 text-violet-600" />
-                <span className="hidden sm:inline">Single Email Dispatch</span>
+                <span className="hidden sm:inline">Single Email</span>
               </button>
             )}
 
@@ -108,7 +122,7 @@ export default function Navbar({
               title="GoDaddy Free Domain & Anti-Spam Setup"
             >
               <ShieldCheck className="h-4 w-4 text-emerald-600" />
-              <span>Domain & Spam Guide</span>
+              <span>Domain Guide</span>
             </button>
 
             {/* Email Signature Settings */}

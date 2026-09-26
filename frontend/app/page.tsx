@@ -10,6 +10,7 @@ import CreatorDetailModal from '../components/CreatorDetailModal';
 import SignatureSettingsModal from '../components/SignatureSettingsModal';
 import DeliverabilityGuideModal from '../components/DeliverabilityGuideModal';
 import BatchOutreachModal from '../components/BatchOutreachModal';
+import ApiMailSenderModal from '../components/ApiMailSenderModal';
 import { Creator, EmailSignature, FilterState } from '../lib/types';
 import { Sparkles, RefreshCw, AlertCircle } from 'lucide-react';
 
@@ -47,6 +48,7 @@ export default function DashboardPage() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [isApiModalOpen, setIsApiModalOpen] = useState(false);
 
   // Email Signature State (persisted in localStorage)
   const [signature, setSignature] = useState<EmailSignature>(DEFAULT_SIGNATURE);
@@ -270,6 +272,7 @@ export default function DashboardPage() {
         onOpenSettings={() => setIsSettingsModalOpen(true)}
         onOpenGuide={() => setIsGuideModalOpen(true)}
         onOpenBatch={() => setIsBatchModalOpen(true)}
+        onOpenApiModal={() => setIsApiModalOpen(true)}
         onOpenSingleEmail={() => {
           setSelectedCreatorForPitch(null);
           setIsPitchModalOpen(true);
@@ -421,6 +424,11 @@ export default function DashboardPage() {
           fetchCreators();
         }}
         pendingCount={creators.filter(c => c.email_status !== 'sent').length}
+      />
+
+      <ApiMailSenderModal
+        isOpen={isApiModalOpen}
+        onClose={() => setIsApiModalOpen(false)}
       />
 
     </div>
