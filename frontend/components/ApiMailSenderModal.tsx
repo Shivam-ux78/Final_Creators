@@ -220,11 +220,20 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
+  const [baseUrl, setBaseUrl] = useState('https://creators.makeable.nyc');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.origin) {
+      // Use current window origin if available, default to live domain
+      setBaseUrl(window.location.origin);
+    }
+  }, []);
+
   if (!isOpen) return null;
 
   const activeKeySample = apiKeysList.find(k => k.status === 'active')?.key || 'mk_live_123456789abcdef';
 
-  const curlCode = `curl -X POST http://localhost:3000/api/v1/send-mail \\
+  const curlCode = `curl -X POST ${baseUrl}/api/v1/send-mail \\
   -H "Content-Type: application/json" \\
   -H "x-api-key: ${activeKeySample}" \\
   -d '{
@@ -233,7 +242,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
     "body": "${body.replace(/\n/g, '\\n') || 'Hi there! We would love to collaborate.'}"
   }'`;
 
-  const jsCode = `const response = await fetch('http://localhost:3000/api/v1/send-mail', {
+  const jsCode = `const response = await fetch('${baseUrl}/api/v1/send-mail', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -251,7 +260,7 @@ console.log(data);`;
 
   const pythonCode = `import requests
 
-url = "http://localhost:3000/api/v1/send-mail"
+url = "${baseUrl}/api/v1/send-mail"
 headers = {
     "Content-Type": "application/json",
     "x-api-key": "${activeKeySample}"
