@@ -36,13 +36,14 @@ export async function isAlreadySent(email?: string, username?: string): Promise<
 
 // 2. Mark creator as sent directly in Supabase database
 export async function recordEmailSent(params: {
-  username: string;
+  username?: string;
   email: string;
   subject: string;
   body: string;
   messageId?: string;
+  senderEmail?: string;
 }) {
-  const { username, email, subject, body, messageId } = params;
+  const { username, email, subject, body, messageId, senderEmail } = params;
   const nowIso = new Date().toISOString();
   const cleanUser = (username || '').toLowerCase().trim();
   const cleanEmail = (email || '').toLowerCase().trim();
@@ -64,6 +65,23 @@ export async function recordEmailSent(params: {
     const { error } = await query;
     if (error) {
       console.warn('Supabase recordEmailSent update error:', error.message);
+    }
+
+    // Attempt to log into email_logs table for audit trail
+    try {
+      await supabase.from('email_logs').insert([
+        {
+          recipient_email: cleanEmail,
+          username: cleanUser,
+          subject,
+          body,
+          message_id: messageId,
+          sender_email: senderEmail,
+          sent_at: nowIso
+        }
+      ]);
+    } catch (logErr) {
+      // Ignore if table does not exist
     }
   } catch (e) {
     console.warn('Supabase status update error:', e);

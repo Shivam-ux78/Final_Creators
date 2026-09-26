@@ -1,11 +1,43 @@
 import { NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
-import { recordEmailSent } from '../../../lib/creators-storage';
+import { recordEmailSent, getTodaySentCountFromSupabase, getDailyLimitInfo } from '../../../lib/creators-storage';
 import { getConfiguredSenders } from '../automated-outreach/route';
 
+// GET: Check live daily email sending stats, limit, and remaining quota
+export async function GET() {
+  try {
+    const todaySentCount = await getTodaySentCountFromSupabase();
+    const { limitPerDomain, totalDailyLimit } = getDailyLimitInfo();
+    const senders = getConfiguredSenders();
+
+    return NextResponse.json({
+      success: true,
+      todaySentCount,
+      defaultDailyLimit: totalDailyLimit,
+      limitPerDomain,
+      remainingQuota: Math.max(0, totalDailyLimit - todaySentCount),
+      configuredSenders: senders.map(s => ({
+        id: s.id,
+        email: s.senderEmail,
+        label: s.label
+      }))
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to fetch mail sender status' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST: API-based mail sender endpoint
 export async function POST(req: Request) {
   try {
+    const authHeader = req.headers.get('authorization');
+    const xApiKeyHeader = req.headers.get('x-api-key');
+
+    const bodyData = await req.json().catch(() => ({}));
     const {
       toEmail,
       toName,
@@ -14,28 +46,52 @@ export async function POST(req: Request) {
       body,
       signature,
       customSenderEmail,
-      customSenderName
-    } = await req.json();
+      customSenderName,
+      apiKey: apiKeyInBody,
+      resendApiKey: resendKeyInBody,
+      dailyLimit: customDailyLimit
+    } = bodyData;
 
     if (!toEmail || !subject || !body) {
       return NextResponse.json(
-        { success: false, error: 'Missing recipient email, subject, or message body.' },
+        { success: false, error: 'Missing required fields: toEmail, subject, or body.' },
         { status: 400 }
       );
     }
 
+    // 1. Enforce Daily Sending Limit
+    const { totalDailyLimit: defaultLimit } = getDailyLimitInfo();
+    const activeDailyLimit = typeof customDailyLimit === 'number' && customDailyLimit > 0 
+      ? customDailyLimit 
+      : defaultLimit;
+
+    const todaySentCount = await getTodaySentCountFromSupabase();
+    if (todaySentCount >= activeDailyLimit) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Daily email sending limit of ${activeDailyLimit} reached for today.`,
+          todaySentCount,
+          dailyLimit: activeDailyLimit,
+          remainingQuota: 0
+        },
+        { status: 429 }
+      );
+    }
+
+    // 2. Resolve API Key & Senders (Support header key, payload key, or server default)
+    const providedApiKey = apiKeyInBody || resendKeyInBody || xApiKeyHeader || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : '');
     const accounts = getConfiguredSenders();
-    let resendApiKey = process.env.RESEND_API_KEY_2 || (accounts.length > 0 ? accounts[0].apiKey : '');
-    
+
+    let resendApiKey = providedApiKey || process.env.RESEND_API_KEY_2 || (accounts.length > 0 ? accounts[0].apiKey : '');
     let senderName = customSenderName || process.env.SENDER_NAME || signature?.senderName || 'MakeAble Partnerships';
     let senderEmail = customSenderEmail || (accounts.length > 0 ? accounts[0].senderEmail : 'collab@makeable.work');
 
-    // Pick matching account key and details if customSenderEmail belongs to one of our 3 active senders
     if (customSenderEmail && accounts.length > 0) {
       const domainPart = customSenderEmail.trim().toLowerCase().split('@')[1] || '';
       const matched = accounts.find(a => a.senderEmail.toLowerCase().includes(domainPart));
       if (matched) {
-        resendApiKey = matched.apiKey;
+        if (!providedApiKey) resendApiKey = matched.apiKey;
         senderName = customSenderName || matched.senderName;
         senderEmail = matched.senderEmail;
       }
@@ -47,11 +103,10 @@ export async function POST(req: Request) {
       finalBody += `\n\n---\n${signature.senderName}\n${signature.title ? signature.title + ' | ' : ''}${signature.brandName}\n${signature.website}\n${signature.phone || ''}`;
     }
 
-    // Helper to convert markdown text to rich email HTML with CTA Button
+    // Helper to convert markdown text to rich email HTML
     const renderEmailToHtml = (rawText: string) => {
       let formatted = rawText;
 
-      // 1. Convert markdown link formats like [Apply Online](url) or [https://...](https://...)
       formatted = formatted.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, (match, text, url) => {
         if (url.includes('makeable.nyc/creators/apply')) {
           return `[[CTA_BUTTON]]`;
@@ -59,19 +114,10 @@ export async function POST(req: Request) {
         return `<a href="${url}" target="_blank" style="color: #4f46e5; font-weight: 600; text-decoration: underline;">${text}</a>`;
       });
 
-      // 2. Convert bold **text** to <strong>
       formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #0f172a; font-weight: 700;">$1</strong>');
-      
-      // 3. Convert bullet markers (* , - , • ) into clean styled bullets
       formatted = formatted.replace(/^[*•\-]\s+/gm, '<span style="color: #6366f1; font-weight: bold; margin-right: 6px;">•</span> ');
-      
-      // 4. Convert *text* to <em>
       formatted = formatted.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
-      
-      // 5. Convert standalone apply URLs to CTA button placeholder
       formatted = formatted.replace(/https?:\/\/makeable\.nyc\/creators\/apply/g, `[[CTA_BUTTON]]`);
-      
-      // 6. Convert remaining URLs to clickable links
       formatted = formatted.replace(/(?<!href=")(https?:\/\/[^\s<]+)(?![^<]*>)/g, '<a href="$1" target="_blank" style="color: #4f46e5; font-weight: 600; text-decoration: underline;">$1</a>');
       
       const buttonHtml = `
@@ -86,7 +132,6 @@ export async function POST(req: Request) {
         formatted = formatted.replace(/\[\[CTA_BUTTON\]\]/g, buttonHtml);
       }
 
-      // 7. Split by paragraphs and style
       const paragraphs = formatted.split(/\n\n+/);
       return `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.65; color: #334155; max-width: 580px; margin: 0 auto;">
@@ -104,10 +149,9 @@ export async function POST(req: Request) {
 
     let messageId = '';
     let methodUsed = '';
-
     const replyToEmail = process.env.REPLY_TO_EMAIL || 'support@makeable.nyc';
 
-    // 1. Try Resend API if API Key is configured
+    // 1. Try Resend API
     if (resendApiKey && resendApiKey.startsWith('re_')) {
       const resend = new Resend(resendApiKey);
       const resendData = await resend.emails.send({
@@ -129,7 +173,7 @@ export async function POST(req: Request) {
       messageId = resendData.data?.id || 'resend-sent';
       methodUsed = `Resend API (${senderEmail})`;
     } 
-    // 2. Try Custom SMTP / Nodemailer if configured
+    // 2. Try Custom SMTP / Nodemailer
     else if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       const transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST || 'smtp.gmail.com',
@@ -152,22 +196,24 @@ export async function POST(req: Request) {
       messageId = info.messageId;
       methodUsed = 'Custom Domain SMTP (Nodemailer)';
     } 
-    // 3. Simulated Demo Mode if keys are not yet configured in .env
+    // 3. Simulated Demo Mode
     else {
       messageId = `simulated-${Date.now()}`;
-      methodUsed = 'Simulated Delivery (Add RESEND_API_KEY or SMTP credentials in .env for live dispatch)';
+      methodUsed = 'Simulated Delivery (Add Resend API Key or SMTP credentials)';
     }
 
-    // Permanently record sent email in local master JSON, registry, and Supabase
+    // Permanently record sent email in Supabase database
     await recordEmailSent({
       username: username || '',
       email: toEmail,
       subject: subject,
       body: finalBody,
-      messageId
+      messageId,
+      senderEmail
     });
 
     const nowIso = new Date().toISOString();
+    const newTodaySentCount = todaySentCount + 1;
 
     return NextResponse.json({
       success: true,
@@ -175,7 +221,11 @@ export async function POST(req: Request) {
       methodUsed,
       sentAt: nowIso,
       toEmail,
-      username
+      username: username || null,
+      senderEmail,
+      todaySentCount: newTodaySentCount,
+      dailyLimit: activeDailyLimit,
+      remainingQuota: Math.max(0, activeDailyLimit - newTodaySentCount)
     });
 
   } catch (error: any) {
