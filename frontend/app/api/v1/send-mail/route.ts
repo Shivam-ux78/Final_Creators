@@ -26,16 +26,54 @@ const SENDER_ACCOUNTS = [
   }
 ];
 
-// Preset Subject Lines if user does not provide one
-const PRESET_SUBJECTS = [
+// Persistent state files
+const ROTATION_FILE = path.join(process.cwd(), '.sender_rotation_v1.json');
+const PRESET_SUBJECTS_FILE = path.join(process.cwd(), '.preset_subjects.json');
+
+const DEFAULT_PRESET_SUBJECTS = [
   'Paid Collab & Partnership Offer ✨',
   'MakeAble x Creator Partnership — Sponsored & Affiliate Offer 🤝',
   'Exclusive Creator Collab (Paid Sponsorship + Free Gifting Kit) 📦'
 ];
 
-// Persistent state file for round-robin rotation (1 -> 2 -> 3 -> 1 -> 2 -> 3...)
-const ROTATION_FILE = path.join(process.cwd(), '.sender_rotation_v1.json');
+// Helper to read current preset subjects
+function getPresetSubjects(): string[] {
+  try {
+    if (fs.existsSync(PRESET_SUBJECTS_FILE)) {
+      const raw = fs.readFileSync(PRESET_SUBJECTS_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed.subjects) && parsed.subjects.length > 0) {
+        return parsed.subjects.filter((s: any) => typeof s === 'string' && s.trim().length > 0);
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading preset subjects file:', e);
+  }
+  return DEFAULT_PRESET_SUBJECTS;
+}
 
+// Helper to save updated preset subjects
+function savePresetSubjects(subjects: string[]): boolean {
+  try {
+    const cleanSubjects = subjects
+      .filter(s => typeof s === 'string' && s.trim().length > 0)
+      .map(s => s.trim());
+
+    if (cleanSubjects.length === 0) return false;
+
+    fs.writeFileSync(
+      PRESET_SUBJECTS_FILE,
+      JSON.stringify({ subjects: cleanSubjects, updatedAt: new Date().toISOString() }, null, 2),
+      'utf-8'
+    );
+    return true;
+  } catch (e) {
+    console.warn('Error saving preset subjects file:', e);
+    return false;
+  }
+}
+
+// Helper for round robin rotation (1 -> 2 -> 3 -> 1 -> 2 -> 3...)
 function getNextRotatedSender() {
   let lastIndex = -1;
   try {
@@ -61,17 +99,18 @@ function getNextRotatedSender() {
   }
 
   return {
-    step: nextIndex + 1, // Human readable: 1, 2, or 3
+    step: nextIndex + 1, // 1, 2, or 3
     totalSenders: SENDER_ACCOUNTS.length,
     sender: SENDER_ACCOUNTS[nextIndex]
   };
 }
 
-// GET: Check API Status, Senders & Rotation Info
+// GET: Check Status, Rotation & Preset Subjects Config
 export async function GET() {
   try {
     const todaySentCount = await getTodaySentCountFromSupabase();
     const { totalDailyLimit } = getDailyLimitInfo();
+    const presetSubjects = getPresetSubjects();
 
     let lastIndex = 0;
     try {
@@ -86,6 +125,7 @@ export async function GET() {
       service: 'MakeAble Round-Robin Mail Sender API v1',
       rotationOrder: ['collab@makeable.work', 'collab@makeable.website', 'collab@makeable.online'],
       currentNextSender: SENDER_ACCOUNTS[(lastIndex + 1) % SENDER_ACCOUNTS.length].senderEmail,
+      presetSubjects,
       todaySentCount,
       dailyLimit: totalDailyLimit,
       remainingQuota: Math.max(0, totalDailyLimit - todaySentCount)
@@ -98,10 +138,63 @@ export async function GET() {
   }
 }
 
-// POST: Public API Endpoint for Sending Email with Automatic 1->2->3 Rotation
+// PUT: Update Preset Subjects List
+export async function PUT(req: Request) {
+  try {
+    const body = await req.json();
+    const { subjects } = body;
+
+    if (!Array.isArray(subjects) || subjects.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Please provide a non-empty array of preset subject strings under "subjects".' },
+        { status: 400 }
+      );
+    }
+
+    const saved = savePresetSubjects(subjects);
+    if (!saved) {
+      return NextResponse.json(
+        { success: false, error: 'Failed to write updated preset subjects.' },
+        { status: 500 }
+      );
+    }
+
+    const updated = getPresetSubjects();
+    return NextResponse.json({
+      success: true,
+      message: 'Preset subjects list successfully updated.',
+      presetSubjects: updated
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to update preset subjects' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST: Public API Endpoint for Sending Email with Automatic 1->2->3 Rotation OR Updating Presets
 export async function POST(req: Request) {
   try {
     const bodyData = await req.json().catch(() => ({}));
+
+    // Handle Config Update Action via POST
+    if (bodyData.action === 'update_presets' || (Array.isArray(bodyData.subjects) && !bodyData.toEmail && !bodyData.to_email)) {
+      const { subjects } = bodyData;
+      if (!Array.isArray(subjects) || subjects.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Please provide a non-empty array of subject lines.' },
+          { status: 400 }
+        );
+      }
+      savePresetSubjects(subjects);
+      return NextResponse.json({
+        success: true,
+        message: 'Preset subjects successfully updated.',
+        presetSubjects: getPresetSubjects()
+      });
+    }
+
     const {
       toEmail,
       to_email,
@@ -110,8 +203,6 @@ export async function POST(req: Request) {
       subject,
       subjectLine,
       subject_line,
-      toName,
-      to_name,
       username
     } = bodyData;
 
@@ -126,7 +217,7 @@ export async function POST(req: Request) {
           error: 'Missing required parameters. Please provide "toEmail" (or "to_email") and "body" (or "message").',
           examplePayload: {
             toEmail: 'creator@example.com',
-            subject: 'Custom Subject Line Here',
+            subject: 'Custom Subject Line Here (Optional)',
             body: 'Hi, we would love to collaborate with you!'
           }
         },
@@ -153,8 +244,9 @@ export async function POST(req: Request) {
     // 2. Perform 1 -> 2 -> 3 Round Robin Sender Rotation
     const { step, totalSenders, sender } = getNextRotatedSender();
 
-    // 3. Resolve Subject Line (User provided subject prioritized, with fallback to dynamic preset)
-    const finalSubject = userSubject || PRESET_SUBJECTS[(step - 1) % PRESET_SUBJECTS.length];
+    // 3. Resolve Subject Line (User-provided subject takes priority; fallback to rotating preset list)
+    const presetSubjects = getPresetSubjects();
+    const finalSubject = userSubject || presetSubjects[(step - 1) % presetSubjects.length];
 
     // 4. Resolve API Key & HTML rendering
     const resendApiKey = process.env.RESEND_API_KEY_2 || process.env.RESEND_API_KEY || '';

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Code, Send, CheckCircle2, AlertCircle, Copy, Terminal, Server, Key, Zap, Layers, Activity, RefreshCw } from 'lucide-react';
+import { X, Code, Send, CheckCircle2, AlertCircle, Copy, Terminal, Server, Key, Zap, Layers, Activity, RefreshCw, Edit3, Plus, Trash2, Save } from 'lucide-react';
 
 interface ApiMailSenderModalProps {
   isOpen: boolean;
@@ -9,13 +9,14 @@ interface ApiMailSenderModalProps {
 }
 
 export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderModalProps) {
-  const [activeTab, setActiveTab] = useState<'tester' | 'docs' | 'stats'>('tester');
+  const [activeTab, setActiveTab] = useState<'tester' | 'presets' | 'docs' | 'stats'>('tester');
   
   // Live API Stats
   const [stats, setStats] = useState<{
     service?: string;
     rotationOrder?: string[];
     currentNextSender?: string;
+    presetSubjects?: string[];
     todaySentCount: number;
     dailyLimit: number;
     remainingQuota: number;
@@ -28,6 +29,12 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('Hello! This is a test message sent via the MakeAble Round-Robin Mail Sender API.');
   
+  // Preset Subjects Edit State
+  const [presetSubjectsList, setPresetSubjectsList] = useState<string[]>([]);
+  const [newSubjectInput, setNewSubjectInput] = useState('');
+  const [isSavingPresets, setIsSavingPresets] = useState(false);
+  const [presetSaveNotice, setPresetSaveNotice] = useState<string | null>(null);
+
   // Tester Execution Result
   const [isSending, setIsSending] = useState(false);
   const [apiResponse, setApiResponse] = useState<any>(null);
@@ -40,14 +47,21 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
       const res = await fetch('/api/v1/send-mail');
       const data = await res.json();
       if (data.success) {
+        const subjects = data.presetSubjects || [
+          'Paid Collab & Partnership Offer ✨',
+          'MakeAble x Creator Partnership — Sponsored & Affiliate Offer 🤝',
+          'Exclusive Creator Collab (Paid Sponsorship + Free Gifting Kit) 📦'
+        ];
         setStats({
           service: data.service,
           rotationOrder: data.rotationOrder || ['collab@makeable.work', 'collab@makeable.website', 'collab@makeable.online'],
           currentNextSender: data.currentNextSender || 'collab@makeable.work',
+          presetSubjects: subjects,
           todaySentCount: data.todaySentCount || 0,
           dailyLimit: data.dailyLimit || 150,
           remainingQuota: data.remainingQuota || 0
         });
+        setPresetSubjectsList(subjects);
       }
     } catch (e) {
       console.warn('Error loading mail sender stats:', e);
@@ -103,6 +117,44 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
     }
   };
 
+  const handleAddPresetSubject = () => {
+    if (!newSubjectInput.trim()) return;
+    setPresetSubjectsList([...presetSubjectsList, newSubjectInput.trim()]);
+    setNewSubjectInput('');
+  };
+
+  const handleRemovePresetSubject = (index: number) => {
+    if (presetSubjectsList.length <= 1) {
+      alert('You must keep at least one preset subject line.');
+      return;
+    }
+    setPresetSubjectsList(presetSubjectsList.filter((_, i) => i !== index));
+  };
+
+  const handleSavePresetsConfig = async () => {
+    setIsSavingPresets(true);
+    setPresetSaveNotice(null);
+    try {
+      const res = await fetch('/api/v1/send-mail', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjects: presetSubjectsList })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPresetSaveNotice('Preset subjects configuration successfully updated!');
+        fetchStats();
+        setTimeout(() => setPresetSaveNotice(null), 3000);
+      } else {
+        alert(data.error || 'Failed to update preset subjects.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Network error updating presets.');
+    } finally {
+      setIsSavingPresets(false);
+    }
+  };
+
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     setCopiedCode(label);
@@ -115,6 +167,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   -H "Content-Type: application/json" \\
   -d '{
     "toEmail": "${toEmail || 'recipient@example.com'}",
+    "subject": "${subject || 'Custom Subject Line Here (Optional)'}",
     "body": "${body.replace(/\n/g, '\\n') || 'Hi there! We would love to collaborate.'}"
   }'`;
 
@@ -125,6 +178,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   },
   body: JSON.stringify({
     toEmail: '${toEmail || 'recipient@example.com'}',
+    subject: '${subject || 'Custom Subject Line Here (Optional)'}',
     body: \`${body || 'Hi there!'}\`
   })
 });
@@ -137,6 +191,7 @@ console.log(data);`;
 url = "http://localhost:3000/api/v1/send-mail"
 payload = {
     "toEmail": "${toEmail || 'recipient@example.com'}",
+    "subject": "${subject || 'Custom Subject Line Here (Optional)'}",
     "body": "${body.replace(/\n/g, '\\n') || 'Hi there!'}"
 }
 
@@ -161,7 +216,7 @@ print(response.json())`;
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Pass destination email & message body. Automatically rotates sender domains: <code>.work</code> ➔ <code>.website</code> ➔ <code>.online</code>.
+                Pass destination email, optional custom subject & body. Rotates domains: <code>.work</code> ➔ <code>.website</code> ➔ <code>.online</code>.
               </p>
             </div>
           </div>
@@ -177,7 +232,7 @@ print(response.json())`;
         {/* Live Rotation Banner */}
         <div className="bg-slate-900 text-slate-200 px-6 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4 text-xs shrink-0">
           <div className="flex items-center space-x-4">
-            <span className="text-slate-400 font-bold uppercase tracking-wider text-[11px]">3-Domain Rotation Sequence:</span>
+            <span className="text-slate-400 font-bold uppercase tracking-wider text-[11px]">3-Domain Rotation:</span>
             <div className="flex items-center space-x-2">
               <span className={`px-2 py-0.5 rounded font-mono font-bold ${stats?.currentNextSender === 'collab@makeable.work' ? 'bg-violet-600 text-white shadow-sm' : 'bg-slate-800 text-slate-400'}`}>
                 1. .work
@@ -194,7 +249,7 @@ print(response.json())`;
           </div>
 
           <div className="flex items-center space-x-4">
-            <span className="text-slate-400">Next Up: <strong className="text-emerald-400 font-mono">{stats?.currentNextSender}</strong></span>
+            <span className="text-slate-400">Next Sender: <strong className="text-emerald-400 font-mono">{stats?.currentNextSender}</strong></span>
             <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
               Quota: {stats?.remainingQuota ?? '...'} remaining
             </span>
@@ -202,10 +257,10 @@ print(response.json())`;
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-slate-200 bg-white px-6 shrink-0">
+        <div className="flex border-b border-slate-200 bg-white px-6 shrink-0 overflow-x-auto">
           <button
             onClick={() => setActiveTab('tester')}
-            className={`px-4 py-3 text-xs font-bold border-b-2 transition-all flex items-center space-x-2 ${
+            className={`px-4 py-3 text-xs font-bold border-b-2 transition-all flex items-center space-x-2 whitespace-nowrap ${
               activeTab === 'tester'
                 ? 'border-violet-600 text-violet-600 bg-violet-50/50'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -216,8 +271,20 @@ print(response.json())`;
           </button>
 
           <button
+            onClick={() => setActiveTab('presets')}
+            className={`px-4 py-3 text-xs font-bold border-b-2 transition-all flex items-center space-x-2 whitespace-nowrap ${
+              activeTab === 'presets'
+                ? 'border-violet-600 text-violet-600 bg-violet-50/50'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Edit3 className="h-3.5 w-3.5" />
+            <span>Preset Subjects Config ({presetSubjectsList.length})</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('docs')}
-            className={`px-4 py-3 text-xs font-bold border-b-2 transition-all flex items-center space-x-2 ${
+            className={`px-4 py-3 text-xs font-bold border-b-2 transition-all flex items-center space-x-2 whitespace-nowrap ${
               activeTab === 'docs'
                 ? 'border-violet-600 text-violet-600 bg-violet-50/50'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -229,7 +296,7 @@ print(response.json())`;
 
           <button
             onClick={() => setActiveTab('stats')}
-            className={`px-4 py-3 text-xs font-bold border-b-2 transition-all flex items-center space-x-2 ${
+            className={`px-4 py-3 text-xs font-bold border-b-2 transition-all flex items-center space-x-2 whitespace-nowrap ${
               activeTab === 'stats'
                 ? 'border-violet-600 text-violet-600 bg-violet-50/50'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -264,6 +331,20 @@ print(response.json())`;
                 </div>
 
                 <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Custom Subject Line (<code className="text-violet-700">subject</code> - Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Leave blank to use preset subject rotation"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">If blank, rotates automatically from your configured preset subject list.</p>
+                </div>
+
+                <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     Message Body (<code className="text-violet-700">body</code>) <span className="text-rose-500">*</span>
                   </label>
@@ -275,20 +356,6 @@ print(response.json())`;
                     onChange={(e) => setBody(e.target.value)}
                     className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500 font-mono"
                   />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">
-                    Subject Line (<code className="text-slate-700">subject</code> - Optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Auto-preset will be used if left blank"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
-                  />
-                  <p className="text-[11px] text-slate-400 mt-1">If blank, rotates between high-converting preset collaboration subjects.</p>
                 </div>
 
                 <button
@@ -345,12 +412,96 @@ print(response.json())`;
             </div>
           )}
 
-          {/* TAB 2: CODE SNIPPETS & DOCS */}
+          {/* TAB 2: PRESET SUBJECTS CONFIG EDITOR */}
+          {activeTab === 'presets' && (
+            <div className="space-y-6">
+              <div className="p-4 rounded-xl bg-violet-50 border border-violet-200 text-xs text-violet-950 flex items-start justify-between">
+                <div>
+                  <h4 className="font-bold text-sm text-violet-900 mb-1">Preset Subject Line Configuration</h4>
+                  <p className="leading-relaxed text-violet-800">
+                    When API callers omit the optional <code className="bg-violet-100 px-1 py-0.5 rounded font-bold font-mono">subject</code> parameter, the API automatically rotates through these preset subject lines in sequence.
+                  </p>
+                </div>
+              </div>
+
+              {presetSaveNotice && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-lg flex items-center space-x-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  <span>{presetSaveNotice}</span>
+                </div>
+              )}
+
+              {/* Subject Lines List */}
+              <div className="space-y-3">
+                <label className="block text-xs font-bold text-slate-700">Active Preset Subjects ({presetSubjectsList.length})</label>
+                {presetSubjectsList.map((subj, idx) => (
+                  <div key={idx} className="flex items-center space-x-2">
+                    <span className="w-6 h-6 rounded bg-slate-100 text-slate-600 font-bold text-xs flex items-center justify-center shrink-0">
+                      {idx + 1}
+                    </span>
+                    <input
+                      type="text"
+                      value={subj}
+                      onChange={(e) => {
+                        const updated = [...presetSubjectsList];
+                        updated[idx] = e.target.value;
+                        setPresetSubjectsList(updated);
+                      }}
+                      className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500 font-medium text-slate-800"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePresetSubject(idx)}
+                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                      title="Remove subject"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Add New Preset Subject Input */}
+              <div className="flex items-center space-x-2 pt-2 border-t border-slate-200">
+                <input
+                  type="text"
+                  placeholder="Enter new preset subject line..."
+                  value={newSubjectInput}
+                  onChange={(e) => setNewSubjectInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddPresetSubject(); } }}
+                  className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddPresetSubject}
+                  className="px-3 py-2 text-xs font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg flex items-center space-x-1.5 transition-all"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Add Subject</span>
+                </button>
+              </div>
+
+              {/* Save Button */}
+              <div className="pt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSavePresetsConfig}
+                  disabled={isSavingPresets}
+                  className="flex items-center space-x-2 px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md transition-all disabled:opacity-50"
+                >
+                  <Save className="h-4 w-4" />
+                  <span>{isSavingPresets ? 'Saving Config...' : 'Save Preset Subjects Config'}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: CODE SNIPPETS & DOCS */}
           {activeTab === 'docs' && (
             <div className="space-y-6">
               <div className="p-4 rounded-xl bg-violet-50 border border-violet-200 text-xs text-violet-900 leading-relaxed">
                 <strong>Public API Endpoint:</strong> Send JSON requests to <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold font-mono text-violet-900">POST /api/v1/send-mail</code>.
-                Only <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold">toEmail</code> and <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold">body</code> are required! Every incoming call automatically cycles through your 3 domains in sequence (1 ➔ 2 ➔ 3 ➔ 1...).
+                Provide <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold">toEmail</code>, <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold">body</code>, and optional <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold">subject</code>.
               </div>
 
               {/* cURL Snippet */}
@@ -400,7 +551,7 @@ print(response.json())`;
             </div>
           )}
 
-          {/* TAB 3: SENDER DOMAINS & DB LOGS */}
+          {/* TAB 4: SENDER DOMAINS & DB LOGS */}
           {activeTab === 'stats' && (
             <div className="space-y-6">
               <div>
