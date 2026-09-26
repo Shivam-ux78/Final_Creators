@@ -29,7 +29,7 @@ export function getStoredApiKeys(): ApiKeyItem[] {
           id: k.id || 'key_' + Math.random(),
           name: k.name || 'API Key',
           key: k.key,
-          dailyLimit: typeof k.dailyLimit === 'number' && k.dailyLimit > 0 ? k.dailyLimit : 100,
+          dailyLimit: typeof k.dailyLimit === 'number' && k.dailyLimit > 0 ? k.dailyLimit : 500,
           createdAt: k.createdAt || new Date().toISOString(),
           lastUsedAt: k.lastUsedAt,
           lastUsedDate: k.lastUsedDate || todayStr,
@@ -47,7 +47,7 @@ export function getStoredApiKeys(): ApiKeyItem[] {
     id: 'key_default_1',
     name: 'Default Production API Key',
     key: 'mk_live_' + crypto.randomBytes(16).toString('hex'),
-    dailyLimit: 100,
+    dailyLimit: 500,
     createdAt: new Date().toISOString(),
     todaySentCount: 0,
     totalSentCount: 0,
@@ -75,7 +75,7 @@ export function saveStoredApiKeys(keys: ApiKeyItem[]): boolean {
 
 export function createNewApiKey(name: string, dailyLimit?: number): ApiKeyItem {
   const keys = getStoredApiKeys();
-  const limit = typeof dailyLimit === 'number' && dailyLimit > 0 ? dailyLimit : 100;
+  const limit = typeof dailyLimit === 'number' && dailyLimit > 0 ? dailyLimit : 500;
   const todayStr = new Date().toISOString().split('T')[0];
 
   const newKey: ApiKeyItem = {

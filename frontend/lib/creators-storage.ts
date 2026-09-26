@@ -130,14 +130,11 @@ export async function getAllCreators() {
   return { creators: [], isFromDb: false };
 }
 
-// 4. Calculate deterministic daily limit per domain (starting 30 on 2026-09-20, +1 per day up to max 50)
+// 4. Calculate deterministic daily limit (Default 500 emails/day)
 export function getDailyLimitInfo() {
-  const startDate = new Date('2026-09-20T00:00:00Z');
-  const now = new Date();
-  const diffDays = Math.floor((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  const limitPerDomain = Math.min(30 + Math.max(0, diffDays), 50);
-  const totalDailyLimit = limitPerDomain * 3; // 3 active senders (.work, .website, .online)
-  return { limitPerDomain, totalDailyLimit, dayNumber: Math.max(1, diffDays + 1) };
+  const limitPerDomain = 167;
+  const totalDailyLimit = 500; // Default 500 daily limit
+  return { limitPerDomain, totalDailyLimit, dayNumber: 1 };
 }
 
 // 5. Fetch number of creators emailed today directly from Supabase

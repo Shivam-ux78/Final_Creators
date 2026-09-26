@@ -35,7 +35,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   }>>([]);
 
   const [newKeyName, setNewKeyName] = useState('');
-  const [newKeyDailyLimit, setNewKeyDailyLimit] = useState('100');
+  const [newKeyDailyLimit, setNewKeyDailyLimit] = useState('500');
   const [isCreatingKey, setIsCreatingKey] = useState(false);
   const [createdKeyNotice, setCreatedKeyNotice] = useState<string | null>(null);
 
@@ -107,14 +107,14 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newKeyName.trim() || 'Production API Key',
-          dailyLimit: Number(newKeyDailyLimit) || 100
+          dailyLimit: Number(newKeyDailyLimit) || 500
         })
       });
       const data = await res.json();
       if (data.success && data.apiKey) {
         setCreatedKeyNotice(`Successfully created key "${data.apiKey.name}" (Limit: ${data.apiKey.dailyLimit}/day): ${data.apiKey.key}`);
         setNewKeyName('');
-        setNewKeyDailyLimit('100');
+        setNewKeyDailyLimit('500');
         fetchStatsAndKeys();
       } else {
         alert(data.error || 'Failed to create API key.');
