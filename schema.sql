@@ -85,11 +85,26 @@ CREATE TABLE IF NOT EXISTS public.api_keys (
     status TEXT DEFAULT 'active'
 );
 
+-- RLS on with NO policies: the public publishable key can't read or write keys.
+-- The server accesses this table only with SUPABASE_SECRET_KEY (bypasses RLS).
 ALTER TABLE public.api_keys ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all operations on api_keys" ON public.api_keys;
+REVOKE ALL ON public.api_keys FROM anon, authenticated;
 
-CREATE POLICY "Allow all operations on api_keys"
-ON public.api_keys
-FOR ALL
-USING (true)
-WITH CHECK (true);
+-- ==============================================================================
+-- EMAIL SUPPRESSION LIST
+-- Checked by /api/v1/send-mail before every send (fails closed if unreadable).
+-- Server-only (SUPABASE_SECRET_KEY), same as api_keys.
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.email_suppressions (
+    email TEXT PRIMARY KEY, -- stored lowercase
+    reason TEXT DEFAULT '',
+    source TEXT DEFAULT '',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
 
+CREATE INDEX IF NOT EXISTS idx_email_suppressions_created_at ON public.email_suppressions(created_at);
+
+ALTER TABLE public.email_suppressions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all operations on email_suppressions" ON public.email_suppressions;
+REVOKE ALL ON public.email_suppressions FROM anon, authenticated;

@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { getSupabaseAdmin } from './supabase-admin';
 
 // Email suppression list stored in Supabase (see email_suppressions in schema.sql).
 // Lookups fail closed: if the table can't be read, callers must not send.
@@ -17,7 +17,7 @@ export function normalizeEmail(email: string): string {
 }
 
 export async function getSuppression(email: string): Promise<SuppressionItem | null> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseAdmin()
     .from(TABLE)
     .select('email, reason, source, created_at')
     .eq('email', normalizeEmail(email))
@@ -28,7 +28,7 @@ export async function getSuppression(email: string): Promise<SuppressionItem | n
 }
 
 export async function addSuppression(email: string, reason: string, source: string): Promise<SuppressionItem> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseAdmin()
     .from(TABLE)
     .upsert([{ email: normalizeEmail(email), reason: reason.trim(), source }], { onConflict: 'email' })
     .select('email, reason, source, created_at')
@@ -39,7 +39,7 @@ export async function addSuppression(email: string, reason: string, source: stri
 }
 
 export async function listSuppressions(limit: number, search?: string): Promise<SuppressionItem[]> {
-  let query = supabase
+  let query = getSupabaseAdmin()
     .from(TABLE)
     .select('email, reason, source, created_at')
     .order('created_at', { ascending: false })

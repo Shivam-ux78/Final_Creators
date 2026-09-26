@@ -1,7 +1,9 @@
-import fs from 'fs';
-import path from 'path';
 import crypto from 'crypto';
-import { supabase } from './supabase';
+import { getSupabaseAdmin } from './supabase-admin';
+
+// API keys live only in the Supabase `api_keys` table, accessed with the server-only
+// secret key. There is no local-file or hardcoded fallback: if Supabase can't be
+// read, key validation fails closed.
 
 export interface ApiKeyItem {
   id: string;
@@ -16,254 +18,135 @@ export interface ApiKeyItem {
   status: 'active' | 'revoked';
 }
 
-const API_KEYS_FILE = path.join(process.cwd(), '.api_keys_store.json');
+const TABLE = 'api_keys';
 
-// In-memory cache for fast access
-let inMemoryKeysCache: ApiKeyItem[] | null = null;
+function todayString(): string {
+  return new Date().toISOString().split('T')[0];
+}
 
-// Synchronous local file/cache loader
-export function getStoredApiKeys(): ApiKeyItem[] {
-  if (inMemoryKeysCache && inMemoryKeysCache.length > 0) {
-    return inMemoryKeysCache;
-  }
+function generateKey(): string {
+  return 'mk_live_' + crypto.randomBytes(16).toString('hex');
+}
 
-  const todayStr = new Date().toISOString().split('T')[0];
-
-  try {
-    if (fs.existsSync(API_KEYS_FILE)) {
-      const raw = fs.readFileSync(API_KEYS_FILE, 'utf-8');
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed.keys) && parsed.keys.length > 0) {
-        const keys = parsed.keys.map((k: any) => ({
-          id: k.id || 'key_' + Math.random(),
-          name: k.name || 'API Key',
-          key: k.key,
-          dailyLimit: typeof k.dailyLimit === 'number' && k.dailyLimit > 0 ? k.dailyLimit : 500,
-          createdAt: k.createdAt || new Date().toISOString(),
-          lastUsedAt: k.lastUsedAt,
-          lastUsedDate: k.lastUsedDate || todayStr,
-          todaySentCount: k.lastUsedDate === todayStr ? (k.todaySentCount || 0) : 0,
-          totalSentCount: k.totalSentCount || 0,
-          status: k.status || 'active'
-        }));
-        inMemoryKeysCache = keys;
-        return keys;
-      }
-    }
-  } catch (e) {
-    console.warn('Error loading local API keys file:', e);
-  }
-
-  const initialKey: ApiKeyItem = {
-    id: 'key_default_1',
-    name: 'Default Production API Key',
-    key: 'mk_live_e841f92b704c3d8e561a2903b417c82f',
-    dailyLimit: 500,
-    createdAt: new Date().toISOString(),
-    todaySentCount: 0,
-    totalSentCount: 0,
-    lastUsedDate: todayStr,
-    status: 'active'
+function fromRow(k: any): ApiKeyItem {
+  const todayStr = todayString();
+  return {
+    id: k.id,
+    name: k.name || 'API Key',
+    key: k.key,
+    dailyLimit: typeof k.daily_limit === 'number' && k.daily_limit > 0 ? k.daily_limit : 500,
+    createdAt: k.created_at || new Date().toISOString(),
+    lastUsedAt: k.last_used_at || undefined,
+    lastUsedDate: k.last_used_date || undefined,
+    todaySentCount: k.last_used_date === todayStr ? (k.today_sent_count || 0) : 0,
+    totalSentCount: k.total_sent_count || 0,
+    status: k.status === 'revoked' ? 'revoked' : 'active'
   };
-
-  saveStoredApiKeys([initialKey]);
-  return [initialKey];
 }
 
-// Helper to push keys to Supabase DB
-async function syncKeysToSupabase(keys: ApiKeyItem[]) {
-  try {
-    for (const k of keys) {
-      await supabase.from('api_keys').upsert({
-        id: k.id,
-        name: k.name,
-        key: k.key,
-        daily_limit: k.dailyLimit,
-        created_at: k.createdAt,
-        last_used_at: k.lastUsedAt || null,
-        last_used_date: k.lastUsedDate || null,
-        today_sent_count: k.todaySentCount || 0,
-        total_sent_count: k.totalSentCount || 0,
-        status: k.status
-      }, { onConflict: 'id' });
-    }
-  } catch (e) {
-    // Ignore error if table is not yet created in DB
-  }
-}
-
-// Async loader with Supabase DB integration for deployment persistence
 export async function getStoredApiKeysAsync(): Promise<ApiKeyItem[]> {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const { data, error } = await getSupabaseAdmin()
+    .from(TABLE)
+    .select('*')
+    .order('created_at', { ascending: false });
 
-  try {
-    const { data, error } = await supabase.from('api_keys').select('*').order('created_at', { ascending: false });
-    if (!error && Array.isArray(data) && data.length > 0) {
-      const keys: ApiKeyItem[] = data.map((k: any) => ({
-        id: k.id,
-        name: k.name || 'API Key',
-        key: k.key,
-        dailyLimit: typeof k.daily_limit === 'number' && k.daily_limit > 0 ? k.daily_limit : 500,
-        createdAt: k.created_at || new Date().toISOString(),
-        lastUsedAt: k.last_used_at || undefined,
-        lastUsedDate: k.last_used_date || todayStr,
-        todaySentCount: k.last_used_date === todayStr ? (k.today_sent_count || 0) : 0,
-        totalSentCount: k.total_sent_count || 0,
-        status: k.status === 'revoked' ? 'revoked' : 'active'
-      }));
-
-      inMemoryKeysCache = keys;
-      saveStoredApiKeysLocal(keys);
-      return keys;
-    }
-  } catch (err) {
-    console.warn('Supabase api_keys fetch error, using local fallback:', err);
-  }
-
-  const localKeys = getStoredApiKeys();
-  syncKeysToSupabase(localKeys).catch(() => {});
-  return localKeys;
+  if (error) throw new Error(`Failed to load API keys: ${error.message}`);
+  return (data || []).map(fromRow);
 }
 
-function saveStoredApiKeysLocal(keys: ApiKeyItem[]): boolean {
-  inMemoryKeysCache = keys;
-  try {
-    fs.writeFileSync(
-      API_KEYS_FILE,
-      JSON.stringify({ keys, updatedAt: new Date().toISOString() }, null, 2),
-      'utf-8'
-    );
-  } catch (e) {
-    // Soft error in read-only environment
-  }
-  return true;
-}
+async function findKeyByValue(keyString: string): Promise<ApiKeyItem | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(TABLE)
+    .select('*')
+    .eq('key', keyString)
+    .maybeSingle();
 
-export function saveStoredApiKeys(keys: ApiKeyItem[]): boolean {
-  saveStoredApiKeysLocal(keys);
-  syncKeysToSupabase(keys).catch(() => {});
-  return true;
+  if (error) throw new Error(`Failed to validate API key: ${error.message}`);
+  return data ? fromRow(data) : null;
 }
 
 export async function createNewApiKeyAsync(name: string, dailyLimit?: number): Promise<ApiKeyItem> {
-  const keys = await getStoredApiKeysAsync();
   const limit = typeof dailyLimit === 'number' && dailyLimit > 0 ? dailyLimit : 500;
-  const todayStr = new Date().toISOString().split('T')[0];
 
-  const newKey: ApiKeyItem = {
-    id: 'key_' + Date.now(),
-    name: name.trim() || 'Custom API Key',
-    key: 'mk_live_' + crypto.randomBytes(16).toString('hex'),
-    dailyLimit: limit,
-    createdAt: new Date().toISOString(),
-    todaySentCount: 0,
-    totalSentCount: 0,
-    lastUsedDate: todayStr,
-    status: 'active'
-  };
+  const { data, error } = await getSupabaseAdmin()
+    .from(TABLE)
+    .insert({
+      id: 'key_' + Date.now(),
+      name: name.trim() || 'Custom API Key',
+      key: generateKey(),
+      daily_limit: limit,
+      created_at: new Date().toISOString(),
+      last_used_date: todayString(),
+      today_sent_count: 0,
+      total_sent_count: 0,
+      status: 'active'
+    })
+    .select('*')
+    .single();
 
-  keys.unshift(newKey);
-  saveStoredApiKeys(keys);
-  await syncKeysToSupabase([newKey]);
-  return newKey;
+  if (error) throw new Error(`Failed to create API key: ${error.message}`);
+  return fromRow(data);
 }
 
-export function createNewApiKey(name: string, dailyLimit?: number): ApiKeyItem {
-  const keys = getStoredApiKeys();
-  const limit = typeof dailyLimit === 'number' && dailyLimit > 0 ? dailyLimit : 500;
-  const todayStr = new Date().toISOString().split('T')[0];
+// Dedicated key used internally by the MCP connector (/api/mcp). Auto-created on first
+// use with a 500/day limit; it never leaves the server. Revoke or rotate it from the
+// dashboard like any other key (revoking it disables sending through the connector).
+const CONNECTOR_KEY_ID = 'key_mcp_connector';
 
-  const newKey: ApiKeyItem = {
-    id: 'key_' + Date.now(),
-    name: name.trim() || 'Custom API Key',
-    key: 'mk_live_' + crypto.randomBytes(16).toString('hex'),
-    dailyLimit: limit,
-    createdAt: new Date().toISOString(),
-    todaySentCount: 0,
-    totalSentCount: 0,
-    lastUsedDate: todayStr,
-    status: 'active'
-  };
+export async function getOrCreateConnectorKeyAsync(): Promise<ApiKeyItem> {
+  const admin = getSupabaseAdmin();
+  const existing = await admin.from(TABLE).select('*').eq('id', CONNECTOR_KEY_ID).maybeSingle();
+  if (existing.error) throw new Error(`Failed to load connector key: ${existing.error.message}`);
+  if (existing.data) return fromRow(existing.data);
 
-  keys.unshift(newKey);
-  saveStoredApiKeys(keys);
-  return newKey;
+  const created = await admin
+    .from(TABLE)
+    .upsert({
+      id: CONNECTOR_KEY_ID,
+      name: 'MCP Connector',
+      key: generateKey(),
+      daily_limit: 500,
+      created_at: new Date().toISOString(),
+      last_used_date: todayString(),
+      today_sent_count: 0,
+      total_sent_count: 0,
+      status: 'active'
+    }, { onConflict: 'id', ignoreDuplicates: true })
+    .select('*')
+    .maybeSingle();
+  if (created.error) throw new Error(`Failed to create connector key: ${created.error.message}`);
+  if (created.data) return fromRow(created.data);
+
+  // Another request created it concurrently
+  const retry = await admin.from(TABLE).select('*').eq('id', CONNECTOR_KEY_ID).single();
+  if (retry.error) throw new Error(`Failed to load connector key: ${retry.error.message}`);
+  return fromRow(retry.data);
 }
 
 export async function revokeApiKeyAsync(id: string): Promise<boolean> {
-  const keys = await getStoredApiKeysAsync();
-  const updated = keys.map(k => {
-    if (k.id === id) {
-      return { ...k, status: 'revoked' as const };
-    }
-    return k;
-  });
-  saveStoredApiKeys(updated);
-  await supabase.from('api_keys').update({ status: 'revoked' }).eq('id', id);
-  return true;
-}
-
-export function revokeApiKey(id: string): boolean {
-  const keys = getStoredApiKeys();
-  const updated = keys.map(k => {
-    if (k.id === id) {
-      return { ...k, status: 'revoked' as const };
-    }
-    return k;
-  });
-  saveStoredApiKeys(updated);
+  const { error } = await getSupabaseAdmin().from(TABLE).update({ status: 'revoked' }).eq('id', id);
+  if (error) throw new Error(`Failed to revoke API key: ${error.message}`);
   return true;
 }
 
 export async function rotateApiKeyAsync(id: string): Promise<ApiKeyItem | null> {
-  const keys = await getStoredApiKeysAsync();
-  let rotatedItem: ApiKeyItem | null = null;
+  const { data, error } = await getSupabaseAdmin()
+    .from(TABLE)
+    .update({
+      key: generateKey(),
+      created_at: new Date().toISOString(),
+      today_sent_count: 0,
+      status: 'active'
+    })
+    .eq('id', id)
+    .select('*')
+    .maybeSingle();
 
-  const updated = keys.map(k => {
-    if (k.id === id) {
-      rotatedItem = {
-        ...k,
-        key: 'mk_live_' + crypto.randomBytes(16).toString('hex'),
-        createdAt: new Date().toISOString(),
-        todaySentCount: 0,
-        status: 'active' as const
-      };
-      return rotatedItem;
-    }
-    return k;
-  });
-
-  if (rotatedItem) {
-    saveStoredApiKeys(updated);
-    await syncKeysToSupabase([rotatedItem]);
-  }
-  return rotatedItem;
+  if (error) throw new Error(`Failed to rotate API key: ${error.message}`);
+  return data ? fromRow(data) : null;
 }
 
-export function rotateApiKey(id: string): ApiKeyItem | null {
-  const keys = getStoredApiKeys();
-  let rotatedItem: ApiKeyItem | null = null;
-
-  const updated = keys.map(k => {
-    if (k.id === id) {
-      rotatedItem = {
-        ...k,
-        key: 'mk_live_' + crypto.randomBytes(16).toString('hex'),
-        createdAt: new Date().toISOString(),
-        todaySentCount: 0,
-        status: 'active' as const
-      };
-      return rotatedItem;
-    }
-    return k;
-  });
-
-  if (rotatedItem) {
-    saveStoredApiKeys(updated);
-  }
-  return rotatedItem;
-}
-
+// Validate Key and Enforce Per-Key Daily Limit
 export async function validateAndRecordKeyUsageAsync(keyString: string): Promise<{
   valid: boolean;
   error?: string;
@@ -273,9 +156,7 @@ export async function validateAndRecordKeyUsageAsync(keyString: string): Promise
     return { valid: false, error: 'An API Key is required. Provide it via the x-api-key header.' };
   }
 
-  const cleanKey = keyString.trim();
-  const keys = await getStoredApiKeysAsync();
-  const keyItem = keys.find(k => k.key === cleanKey);
+  const keyItem = await findKeyByValue(keyString.trim());
 
   if (!keyItem) {
     return { valid: false, error: 'Invalid API Key provided.' };
@@ -285,14 +166,7 @@ export async function validateAndRecordKeyUsageAsync(keyString: string): Promise
     return { valid: false, error: 'This API Key has been revoked.' };
   }
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  let currentTodaySent = keyItem.todaySentCount || 0;
-
-  if (keyItem.lastUsedDate !== todayStr) {
-    currentTodaySent = 0;
-  }
-
-  if (currentTodaySent >= keyItem.dailyLimit) {
+  if (keyItem.todaySentCount >= keyItem.dailyLimit) {
     return {
       valid: false,
       error: `Daily limit of ${keyItem.dailyLimit} emails for API key "${keyItem.name}" has been reached for today.`,
@@ -300,58 +174,21 @@ export async function validateAndRecordKeyUsageAsync(keyString: string): Promise
     };
   }
 
-  keyItem.todaySentCount = currentTodaySent + 1;
-  keyItem.totalSentCount = (keyItem.totalSentCount || 0) + 1;
+  keyItem.todaySentCount += 1;
+  keyItem.totalSentCount += 1;
   keyItem.lastUsedAt = new Date().toISOString();
-  keyItem.lastUsedDate = todayStr;
+  keyItem.lastUsedDate = todayString();
 
-  saveStoredApiKeys(keys);
-  await syncKeysToSupabase([keyItem]);
+  const { error } = await getSupabaseAdmin()
+    .from(TABLE)
+    .update({
+      today_sent_count: keyItem.todaySentCount,
+      total_sent_count: keyItem.totalSentCount,
+      last_used_at: keyItem.lastUsedAt,
+      last_used_date: keyItem.lastUsedDate
+    })
+    .eq('id', keyItem.id);
 
-  return { valid: true, keyItem };
-}
-
-export function validateAndRecordKeyUsage(keyString: string): {
-  valid: boolean;
-  error?: string;
-  keyItem?: ApiKeyItem;
-} {
-  if (!keyString || !keyString.trim()) {
-    return { valid: false, error: 'An API Key is required. Provide it via the x-api-key header.' };
-  }
-
-  const cleanKey = keyString.trim();
-  const keys = getStoredApiKeys();
-  const keyItem = keys.find(k => k.key === cleanKey);
-
-  if (!keyItem) {
-    return { valid: false, error: 'Invalid API Key provided.' };
-  }
-
-  if (keyItem.status === 'revoked') {
-    return { valid: false, error: 'This API Key has been revoked.' };
-  }
-
-  const todayStr = new Date().toISOString().split('T')[0];
-  let currentTodaySent = keyItem.todaySentCount || 0;
-
-  if (keyItem.lastUsedDate !== todayStr) {
-    currentTodaySent = 0;
-  }
-
-  if (currentTodaySent >= keyItem.dailyLimit) {
-    return {
-      valid: false,
-      error: `Daily limit of ${keyItem.dailyLimit} emails for API key "${keyItem.name}" has been reached for today.`,
-      keyItem
-    };
-  }
-
-  keyItem.todaySentCount = currentTodaySent + 1;
-  keyItem.totalSentCount = (keyItem.totalSentCount || 0) + 1;
-  keyItem.lastUsedAt = new Date().toISOString();
-  keyItem.lastUsedDate = todayStr;
-
-  saveStoredApiKeys(keys);
+  if (error) throw new Error(`Failed to record API key usage: ${error.message}`);
   return { valid: true, keyItem };
 }

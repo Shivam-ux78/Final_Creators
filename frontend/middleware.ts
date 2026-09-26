@@ -2,6 +2,33 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 const AUTH_COOKIE_NAME = 'makeable_auth_token';
+// Must match lib/auth.ts (which uses Node crypto and can't run in the Edge middleware)
+const AUTH_SECRET = process.env.AUTH_SECRET || process.env.JWT_SECRET || 'makeable_super_secret_session_key_2026';
+
+// Verify the HMAC-signed session cookie created by lib/auth.ts createSessionToken()
+async function isValidSession(token: string | undefined): Promise<boolean> {
+  if (!token) return false;
+  try {
+    const parts = atob(token).split(':');
+    if (parts.length !== 3) return false;
+
+    const [username, expiresAtStr, signature] = parts;
+    const expiresAt = parseInt(expiresAtStr, 10);
+    if (isNaN(expiresAt) || Date.now() > expiresAt) return false;
+
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey('raw', encoder.encode(AUTH_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const digest = await crypto.subtle.sign('HMAC', key, encoder.encode(`${username}:${expiresAtStr}`));
+    const expected = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (expected.length !== signature.length) return false;
+    let diff = 0;
+    for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+    return diff === 0;
+  } catch (e) {
+    return false;
+  }
+}
 
 // Public endpoints and static assets that bypass cookie authentication
 const PUBLIC_PATHS = [
@@ -19,7 +46,7 @@ const PUBLIC_PATHS = [
   '/favicon.ico'
 ];
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
 
   // 1. Allow Next.js static files and internal paths
@@ -54,8 +81,7 @@ export function middleware(request: NextRequest) {
   ) {
     // If user is already authenticated and visits /login, redirect to dashboard /
     if (pathname === '/login') {
-      const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
-      if (token && token.length > 20) {
+      if (await isValidSession(request.cookies.get(AUTH_COOKIE_NAME)?.value)) {
         const dest = request.nextUrl.clone();
         dest.pathname = '/';
         dest.search = '';
@@ -65,21 +91,13 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 4. Protect all other pages and API endpoints
-  const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
-  const xApiKey = request.headers.get('x-api-key');
-  const authHeader = request.headers.get('authorization');
-
-  // Allow API requests authenticated via API Key header
-  if (pathname.startsWith('/api/') && (xApiKey || authHeader)) {
-    return NextResponse.next();
-  }
-
-  if (!token || token.length < 20) {
+  // 4. Protect all other pages and API endpoints with a verified dashboard session.
+  // (API-key access is only for /api/v1/*, which validates keys itself.)
+  if (!(await isValidSession(request.cookies.get(AUTH_COOKIE_NAME)?.value))) {
     // For API routes, return 401 Unauthorized
     if (pathname.startsWith('/api/')) {
       return NextResponse.json(
-        { success: false, error: 'Unauthorized. Please login or provide a valid API Key via x-api-key header.' },
+        { success: false, error: 'Unauthorized. Please log in to the dashboard.' },
         { status: 401 }
       );
     }

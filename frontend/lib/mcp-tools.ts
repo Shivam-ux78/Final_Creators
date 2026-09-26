@@ -1,9 +1,10 @@
 import { supabase } from './supabase';
 import { getSuppression, addSuppression, listSuppressions, normalizeEmail } from './suppressions';
+import { getOrCreateConnectorKeyAsync } from './api-keys-storage';
 
 // Tools exposed by the MCP connector at /api/mcp.
-// The mail API key lives only in the MAKEABLE_MAIL_API_KEY server env var; it is
-// attached here when calling /api/v1/* and is never returned to the MCP client.
+// Calls /api/v1/* with the connector's own auto-provisioned API key ("MCP Connector",
+// 500/day). The key is looked up server-side per call and never returned to the client.
 
 export interface ToolContext {
   apiBase: string;
@@ -44,8 +45,11 @@ function optionalString(value: unknown, field: string, maxLength: number): strin
 }
 
 async function callMailApi(ctx: ToolContext, path: string, init: { method: 'GET' | 'POST'; body?: unknown }) {
-  const apiKey = process.env.MAKEABLE_MAIL_API_KEY;
-  if (!apiKey) throw new ToolError('Connector is not configured: MAKEABLE_MAIL_API_KEY is not set on the server.');
+  const connectorKey = await getOrCreateConnectorKeyAsync();
+  if (connectorKey.status === 'revoked') {
+    throw new ToolError('The "MCP Connector" API key is revoked. Rotate it in the dashboard to re-enable sending.');
+  }
+  const apiKey = connectorKey.key;
 
   const res = await fetch(`${ctx.apiBase}${path}`, {
     method: init.method,
