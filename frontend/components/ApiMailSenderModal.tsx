@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Code, Send, CheckCircle2, AlertCircle, Copy, Terminal, Server, Key, Zap, Layers, Activity } from 'lucide-react';
+import { X, Code, Send, CheckCircle2, AlertCircle, Copy, Terminal, Server, Key, Zap, Layers, Activity, RefreshCw } from 'lucide-react';
 
 interface ApiMailSenderModalProps {
   isOpen: boolean;
@@ -13,22 +13,20 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   
   // Live API Stats
   const [stats, setStats] = useState<{
+    service?: string;
+    rotationOrder?: string[];
+    currentNextSender?: string;
     todaySentCount: number;
-    defaultDailyLimit: number;
-    limitPerDomain: number;
+    dailyLimit: number;
     remainingQuota: number;
-    configuredSenders: Array<{ id: string; email: string; label: string }>;
   } | null>(null);
 
   const [loadingStats, setLoadingStats] = useState(false);
 
   // Tester Form state
   const [toEmail, setToEmail] = useState('');
-  const [subject, setSubject] = useState('Test Email via MakeAble Mailer API');
-  const [body, setBody] = useState('Hello! This is a test email sent using the MakeAble API Mail Sender endpoint.');
-  const [apiKey, setApiKey] = useState('');
-  const [dailyLimitOverride, setDailyLimitOverride] = useState<string>('');
-  const [customSenderEmail, setCustomSenderEmail] = useState('collab@makeable.work');
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('Hello! This is a test message sent via the MakeAble Round-Robin Mail Sender API.');
   
   // Tester Execution Result
   const [isSending, setIsSending] = useState(false);
@@ -39,15 +37,16 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   const fetchStats = async () => {
     setLoadingStats(true);
     try {
-      const res = await fetch('/api/send-email');
+      const res = await fetch('/api/v1/send-mail');
       const data = await res.json();
       if (data.success) {
         setStats({
+          service: data.service,
+          rotationOrder: data.rotationOrder || ['collab@makeable.work', 'collab@makeable.website', 'collab@makeable.online'],
+          currentNextSender: data.currentNextSender || 'collab@makeable.work',
           todaySentCount: data.todaySentCount || 0,
-          defaultDailyLimit: data.defaultDailyLimit || 150,
-          limitPerDomain: data.limitPerDomain || 50,
-          remainingQuota: data.remainingQuota || 0,
-          configuredSenders: data.configuredSenders || []
+          dailyLimit: data.dailyLimit || 150,
+          remainingQuota: data.remainingQuota || 0
         });
       }
     } catch (e) {
@@ -65,8 +64,8 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
 
   const handleTestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!toEmail || !subject || !body) {
-      alert('Please provide recipient email, subject, and body.');
+    if (!toEmail || !body) {
+      alert('Please provide destination email and message body.');
       return;
     }
 
@@ -75,27 +74,20 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
     setResponseStatus(null);
 
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-      };
-      if (apiKey.trim()) {
-        headers['x-api-key'] = apiKey.trim();
-      }
-
       const payload: any = {
         toEmail: toEmail.trim(),
-        subject: subject.trim(),
-        body: body.trim(),
-        customSenderEmail: customSenderEmail.trim()
+        body: body.trim()
       };
 
-      if (dailyLimitOverride.trim()) {
-        payload.dailyLimit = Number(dailyLimitOverride.trim());
+      if (subject.trim()) {
+        payload.subject = subject.trim();
       }
 
-      const res = await fetch('/api/send-email', {
+      const res = await fetch('/api/v1/send-mail', {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify(payload)
       });
 
@@ -119,29 +111,21 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
 
   if (!isOpen) return null;
 
-  const curlCode = `curl -X POST http://localhost:3000/api/send-email \\
+  const curlCode = `curl -X POST http://localhost:3000/api/v1/send-mail \\
   -H "Content-Type: application/json" \\
-  -H "x-api-key: ${apiKey || 'YOUR_RESEND_API_KEY'}" \\
   -d '{
     "toEmail": "${toEmail || 'recipient@example.com'}",
-    "subject": "${subject || 'Collaboration Offer'}",
-    "body": "${body.replace(/\n/g, '\\n') || 'Hi there! We would love to collaborate.'}",
-    "customSenderEmail": "${customSenderEmail}",
-    "dailyLimit": ${dailyLimitOverride || 150}
+    "body": "${body.replace(/\n/g, '\\n') || 'Hi there! We would love to collaborate.'}"
   }'`;
 
-  const jsCode = `const response = await fetch('http://localhost:3000/api/send-email', {
+  const jsCode = `const response = await fetch('http://localhost:3000/api/v1/send-mail', {
   method: 'POST',
   headers: {
-    'Content-Type': 'application/json',
-    'x-api-key': '${apiKey || 'YOUR_RESEND_API_KEY'}'
+    'Content-Type': 'application/json'
   },
   body: JSON.stringify({
     toEmail: '${toEmail || 'recipient@example.com'}',
-    subject: '${subject || 'Collaboration Offer'}',
-    body: \`${body || 'Hi there!'}\`,
-    customSenderEmail: '${customSenderEmail}',
-    dailyLimit: ${dailyLimitOverride || 150}
+    body: \`${body || 'Hi there!'}\`
   })
 });
 
@@ -150,20 +134,13 @@ console.log(data);`;
 
   const pythonCode = `import requests
 
-url = "http://localhost:3000/api/send-email"
-headers = {
-    "Content-Type": "application/json",
-    "x-api-key": "${apiKey || 'YOUR_RESEND_API_KEY'}"
-}
+url = "http://localhost:3000/api/v1/send-mail"
 payload = {
     "toEmail": "${toEmail || 'recipient@example.com'}",
-    "subject": "${subject || 'Collaboration Offer'}",
-    "body": "${body.replace(/\n/g, '\\n') || 'Hi there!'}",
-    "customSenderEmail": "${customSenderEmail}",
-    "dailyLimit": ${dailyLimitOverride || 150}
+    "body": "${body.replace(/\n/g, '\\n') || 'Hi there!'}"
 }
 
-response = requests.post(url, json=payload, headers=headers)
+response = requests.post(url, json=payload)
 print(response.json())`;
 
   return (
@@ -174,17 +151,17 @@ print(response.json())`;
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
           <div className="flex items-center space-x-3">
             <div className="h-10 w-10 rounded-xl bg-violet-600/30 border border-violet-400/30 flex items-center justify-center text-violet-400">
-              <Server className="h-5 w-5" />
+              <RefreshCw className="h-5 w-5" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h2 className="text-xl font-extrabold tracking-tight">API Mail Sender</h2>
+                <h2 className="text-xl font-extrabold tracking-tight">Round-Robin Mail Sender API</h2>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold">
-                  REST API v1
+                  1 ➔ 2 ➔ 3 Auto-Rotation
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Send emails programmatically with dynamic daily limits, key validation & Supabase tracking.
+                Pass destination email & message body. Automatically rotates sender domains: <code>.work</code> ➔ <code>.website</code> ➔ <code>.online</code>.
               </p>
             </div>
           </div>
@@ -197,33 +174,30 @@ print(response.json())`;
           </button>
         </div>
 
-        {/* Live Quota Bar */}
-        <div className="bg-slate-50 px-6 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4 text-xs font-medium shrink-0">
-          <div className="flex items-center space-x-6">
+        {/* Live Rotation Banner */}
+        <div className="bg-slate-900 text-slate-200 px-6 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4 text-xs shrink-0">
+          <div className="flex items-center space-x-4">
+            <span className="text-slate-400 font-bold uppercase tracking-wider text-[11px]">3-Domain Rotation Sequence:</span>
             <div className="flex items-center space-x-2">
-              <Activity className="h-4 w-4 text-indigo-600" />
-              <span className="text-slate-600">Daily Sent:</span>
-              <strong className="text-slate-900 font-bold">{stats?.todaySentCount ?? '...'}</strong>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Zap className="h-4 w-4 text-amber-500" />
-              <span className="text-slate-600">Daily Limit:</span>
-              <strong className="text-slate-900 font-bold">{stats?.defaultDailyLimit ?? '...'} / day</strong>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              <span className="text-slate-600">Remaining Quota:</span>
-              <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold">
-                {stats?.remainingQuota ?? '...'} emails
+              <span className={`px-2 py-0.5 rounded font-mono font-bold ${stats?.currentNextSender === 'collab@makeable.work' ? 'bg-violet-600 text-white shadow-sm' : 'bg-slate-800 text-slate-400'}`}>
+                1. .work
+              </span>
+              <span className="text-slate-600">➔</span>
+              <span className={`px-2 py-0.5 rounded font-mono font-bold ${stats?.currentNextSender === 'collab@makeable.website' ? 'bg-violet-600 text-white shadow-sm' : 'bg-slate-800 text-slate-400'}`}>
+                2. .website
+              </span>
+              <span className="text-slate-600">➔</span>
+              <span className={`px-2 py-0.5 rounded font-mono font-bold ${stats?.currentNextSender === 'collab@makeable.online' ? 'bg-violet-600 text-white shadow-sm' : 'bg-slate-800 text-slate-400'}`}>
+                3. .online
               </span>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 text-slate-500 text-[11px]">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-            <span>Endpoint: <code className="bg-slate-200 px-1.5 py-0.5 rounded text-slate-800 font-mono font-bold">POST /api/send-email</code></span>
+          <div className="flex items-center space-x-4">
+            <span className="text-slate-400">Next Up: <strong className="text-emerald-400 font-mono">{stats?.currentNextSender}</strong></span>
+            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+              Quota: {stats?.remainingQuota ?? '...'} remaining
+            </span>
           </div>
         </div>
 
@@ -250,7 +224,7 @@ print(response.json())`;
             }`}
           >
             <Code className="h-3.5 w-3.5" />
-            <span>Code Snippets & Docs</span>
+            <span>API Docs & Snippets</span>
           </button>
 
           <button
@@ -262,7 +236,7 @@ print(response.json())`;
             }`}
           >
             <Layers className="h-3.5 w-3.5" />
-            <span>Configured Senders & Keys</span>
+            <span>Sender Domains & DB Logs</span>
           </button>
         </div>
 
@@ -277,7 +251,7 @@ print(response.json())`;
               <form onSubmit={handleTestSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Recipient Email <span className="text-rose-500">*</span>
+                    Destination Email (<code className="text-violet-700">toEmail</code>) <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="email"
@@ -291,91 +265,48 @@ print(response.json())`;
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Subject Line <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Email Subject"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Message Body <span className="text-rose-500">*</span>
+                    Message Body (<code className="text-violet-700">body</code>) <span className="text-rose-500">*</span>
                   </label>
                   <textarea
-                    rows={4}
+                    rows={5}
                     required
-                    placeholder="Email text / markdown..."
+                    placeholder="Write your email message here..."
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
                     className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500 font-mono"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">
-                      Sender Domain
-                    </label>
-                    <select
-                      value={customSenderEmail}
-                      onChange={(e) => setCustomSenderEmail(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
-                    >
-                      <option value="collab@makeable.work">collab@makeable.work</option>
-                      <option value="collab@makeable.website">collab@makeable.website</option>
-                      <option value="collab@makeable.online">collab@makeable.online</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">
-                      Daily Limit Override
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="Default: 150"
-                      value={dailyLimitOverride}
-                      onChange={(e) => setDailyLimitOverride(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                </div>
-
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">
-                    API Key Header (<code className="text-slate-800">x-api-key</code>)
+                    Subject Line (<code className="text-slate-700">subject</code> - Optional)
                   </label>
                   <input
-                    type="password"
-                    placeholder="Optional (Uses server key if empty)"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg font-mono"
+                    type="text"
+                    placeholder="Auto-preset will be used if left blank"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
                   />
+                  <p className="text-[11px] text-slate-400 mt-1">If blank, rotates between high-converting preset collaboration subjects.</p>
                 </div>
 
                 <button
                   type="submit"
                   disabled={isSending}
-                  className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-lg shadow-sm transition-all disabled:opacity-50"
+                  className="w-full flex items-center justify-center space-x-2 py-3 px-4 text-xs font-bold text-white bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 rounded-xl shadow-md transition-all disabled:opacity-50"
                 >
                   <Send className={`h-4 w-4 ${isSending ? 'animate-bounce' : ''}`} />
-                  <span>{isSending ? 'Sending API Request...' : 'Execute Test Send via API'}</span>
+                  <span>{isSending ? 'Sending & Rotating Domain...' : 'Send API Email (Trigger 1➔2➔3 Rotation)'}</span>
                 </button>
               </form>
 
-              {/* API Response Output */}
+              {/* API Response Console */}
               <div className="flex flex-col bg-slate-950 text-slate-100 rounded-xl p-4 border border-slate-800 font-mono text-xs">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-800 text-slate-400">
                   <span className="flex items-center space-x-2">
                     <Terminal className="h-4 w-4 text-emerald-400" />
-                    <span className="font-semibold text-slate-300">API Response Console</span>
+                    <span className="font-semibold text-slate-300">Live API Response</span>
                   </span>
                   {responseStatus && (
                     <span
@@ -392,13 +323,20 @@ print(response.json())`;
 
                 <div className="flex-1 overflow-y-auto py-3 space-y-2 text-[11px]">
                   {apiResponse ? (
-                    <pre className="whitespace-pre-wrap text-emerald-300 leading-relaxed">
-                      {JSON.stringify(apiResponse, null, 2)}
-                    </pre>
+                    <div>
+                      {apiResponse.senderEmail && (
+                        <div className="p-2 mb-3 bg-violet-950/60 border border-violet-800/60 rounded text-violet-200">
+                          🎯 Dispatched via <strong>{apiResponse.senderEmail}</strong> ({apiResponse.rotationStep})
+                        </div>
+                      )}
+                      <pre className="whitespace-pre-wrap text-emerald-300 leading-relaxed">
+                        {JSON.stringify(apiResponse, null, 2)}
+                      </pre>
+                    </div>
                   ) : (
-                    <div className="h-48 flex flex-col items-center justify-center text-slate-600 text-center">
-                      <Code className="h-8 w-8 mb-2 text-slate-700" />
-                      <p>Fill form and click "Execute Test Send" to view live JSON response.</p>
+                    <div className="h-56 flex flex-col items-center justify-center text-slate-600 text-center">
+                      <RefreshCw className="h-8 w-8 mb-2 text-slate-700" />
+                      <p>Enter email & message, then click Send to observe live domain rotation.</p>
                     </div>
                   )}
                 </div>
@@ -411,14 +349,14 @@ print(response.json())`;
           {activeTab === 'docs' && (
             <div className="space-y-6">
               <div className="p-4 rounded-xl bg-violet-50 border border-violet-200 text-xs text-violet-900 leading-relaxed">
-                <strong>API Endpoint Details:</strong> Submit JSON payloads to <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold font-mono text-violet-900">POST /api/send-email</code>.
-                You can authenticate using <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold font-mono">x-api-key</code> or <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold font-mono">Authorization: Bearer &lt;key&gt;</code> headers.
+                <strong>Public API Endpoint:</strong> Send JSON requests to <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold font-mono text-violet-900">POST /api/v1/send-mail</code>.
+                Only <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold">toEmail</code> and <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold">body</code> are required! Every incoming call automatically cycles through your 3 domains in sequence (1 ➔ 2 ➔ 3 ➔ 1...).
               </div>
 
               {/* cURL Snippet */}
               <div className="bg-slate-950 text-slate-100 rounded-xl p-4 border border-slate-800">
                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                  <span className="text-xs font-bold text-slate-300">cURL (Command Line)</span>
+                  <span className="text-xs font-bold text-slate-300">cURL Command</span>
                   <button
                     onClick={() => copyToClipboard(curlCode, 'curl')}
                     className="flex items-center space-x-1 text-xs text-slate-400 hover:text-white"
@@ -433,7 +371,7 @@ print(response.json())`;
               {/* JavaScript Snippet */}
               <div className="bg-slate-950 text-slate-100 rounded-xl p-4 border border-slate-800">
                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                  <span className="text-xs font-bold text-slate-300">JavaScript / TypeScript (fetch)</span>
+                  <span className="text-xs font-bold text-slate-300">JavaScript / Node.js (fetch)</span>
                   <button
                     onClick={() => copyToClipboard(jsCode, 'js')}
                     className="flex items-center space-x-1 text-xs text-slate-400 hover:text-white"
@@ -462,34 +400,41 @@ print(response.json())`;
             </div>
           )}
 
-          {/* TAB 3: CONFIGURED SENDERS & KEYS */}
+          {/* TAB 3: SENDER DOMAINS & DB LOGS */}
           {activeTab === 'stats' && (
             <div className="space-y-6">
               <div>
                 <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">
-                  Configured Sender Domains & API Keys
+                  Connected Sender Domains (1 ➔ 2 ➔ 3 Round-Robin)
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {stats?.configuredSenders.map((s) => (
-                    <div key={s.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                      <div className="flex items-center space-x-2 text-indigo-600 mb-1">
-                        <Key className="h-4 w-4" />
-                        <span className="text-xs font-bold text-slate-900">{s.id}</span>
-                      </div>
-                      <p className="text-xs font-semibold text-slate-700 truncate">{s.email}</p>
-                      <p className="text-[11px] text-slate-400 mt-1">Quota: {stats.limitPerDomain} / day</p>
-                    </div>
-                  ))}
+                  <div className="p-4 rounded-xl bg-violet-50 border border-violet-200">
+                    <span className="px-2 py-0.5 rounded bg-violet-600 text-white text-[10px] font-bold">Step 1</span>
+                    <h4 className="text-xs font-bold text-slate-900 mt-2">MakeAble Work</h4>
+                    <p className="text-xs font-mono text-violet-700 font-semibold">collab@makeable.work</p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200">
+                    <span className="px-2 py-0.5 rounded bg-indigo-600 text-white text-[10px] font-bold">Step 2</span>
+                    <h4 className="text-xs font-bold text-slate-900 mt-2">MakeAble Website</h4>
+                    <p className="text-xs font-mono text-indigo-700 font-semibold">collab@makeable.website</p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+                    <span className="px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold">Step 3</span>
+                    <h4 className="text-xs font-bold text-slate-900 mt-2">MakeAble Online</h4>
+                    <p className="text-xs font-mono text-emerald-700 font-semibold">collab@makeable.online</p>
+                  </div>
                 </div>
               </div>
 
               <div className="p-4 rounded-xl bg-slate-900 text-white space-y-2">
                 <h4 className="text-xs font-bold text-emerald-400 flex items-center space-x-2">
                   <CheckCircle2 className="h-4 w-4" />
-                  <span>Automatic Supabase Tracking Enabled</span>
+                  <span>Automatic Supabase Database Recording</span>
                 </h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  All requests processed through <code className="text-emerald-300">/api/send-email</code> are automatically updated in your Supabase creators database table (<code className="text-emerald-300">creators</code>) and written to the <code className="text-emerald-300">email_logs</code> table with message IDs and timestamps.
+                  Every email dispatched via <code className="text-emerald-300">/api/v1/send-mail</code> is automatically logged directly into your Supabase database table (<code className="text-emerald-300">creators</code> and <code className="text-emerald-300">email_logs</code>) with timestamps, sender domain, subject, and Resend message ID.
                 </p>
               </div>
             </div>
