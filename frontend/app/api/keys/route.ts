@@ -1,12 +1,20 @@
 import { NextResponse } from 'next/server';
 import { getStoredApiKeys, createNewApiKey, revokeApiKey } from '../../../lib/api-keys-storage';
 
-// GET: List all API Keys
+// GET: List all API Keys with count summary
 export async function GET() {
   try {
     const keys = getStoredApiKeys();
+    const activeKeys = keys.filter(k => k.status === 'active');
+    const revokedKeys = keys.filter(k => k.status === 'revoked');
+    const combinedDailyLimit = activeKeys.reduce((acc, k) => acc + (k.dailyLimit || 100), 0);
+
     return NextResponse.json({
       success: true,
+      totalKeys: keys.length,
+      activeKeysCount: activeKeys.length,
+      revokedKeysCount: revokedKeys.length,
+      combinedActiveDailyLimit: combinedDailyLimit,
       keys
     });
   } catch (error: any) {
