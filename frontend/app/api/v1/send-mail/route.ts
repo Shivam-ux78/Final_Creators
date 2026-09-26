@@ -4,7 +4,7 @@ import { Resend } from 'resend';
 import fs from 'fs';
 import path from 'path';
 import { recordEmailSent, getTodaySentCountFromSupabase, getDailyLimitInfo } from '../../../../lib/creators-storage';
-import { validateAndRecordKeyUsage } from '../../../../lib/api-keys-storage';
+import { validateAndRecordKeyUsageAsync } from '../../../../lib/api-keys-storage';
 import { verifySessionToken, AUTH_COOKIE_NAME } from '../../../../lib/auth';
 import { getSuppression } from '../../../../lib/suppressions';
 
@@ -250,8 +250,8 @@ export async function POST(req: Request) {
     const providedApiKey = xApiKeyHeader || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : '') || bodyData.apiKey;
 
     const keyValidation = providedApiKey || !hasDashboardSession()
-      ? validateAndRecordKeyUsage(providedApiKey)
-      : { valid: true } as ReturnType<typeof validateAndRecordKeyUsage>;
+      ? await validateAndRecordKeyUsageAsync(providedApiKey)
+      : { valid: true } as Awaited<ReturnType<typeof validateAndRecordKeyUsageAsync>>;
     if (!keyValidation.valid) {
       return NextResponse.json(
         {

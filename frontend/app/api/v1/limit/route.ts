@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
-import { getStoredApiKeys } from '../../../../lib/api-keys-storage';
+import { getStoredApiKeysAsync } from '../../../../lib/api-keys-storage';
 import { getTodaySentCountFromSupabase, getDailyLimitInfo } from '../../../../lib/creators-storage';
 
 // Helper to resolve API Key details and usage
-function resolveApiKeyLimitInfo(providedKey?: string | null) {
+async function resolveApiKeyLimitInfo(providedKey?: string | null) {
   const cleanKey = (providedKey || '').trim();
   const todayStr = new Date().toISOString().split('T')[0];
   const tomorrowReset = new Date(new Date().setUTCHours(24, 0, 0, 0)).toISOString();
 
   if (cleanKey) {
-    const keys = getStoredApiKeys();
+    const keys = await getStoredApiKeysAsync();
     const keyItem = keys.find(k => k.key === cleanKey);
 
     if (keyItem) {
@@ -44,7 +44,7 @@ export async function GET(req: Request) {
     const queryKey = searchParams.get('key') || searchParams.get('api_key') || searchParams.get('apiKey');
 
     const providedKey = xApiKeyHeader || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : '') || queryKey;
-    const keyInfo = resolveApiKeyLimitInfo(providedKey);
+    const keyInfo = await resolveApiKeyLimitInfo(providedKey);
 
     if (keyInfo.isKeySpecific) {
       if (keyInfo.status === 'revoked') {
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
     const xApiKeyHeader = req.headers.get('x-api-key');
 
     const providedKey = xApiKeyHeader || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : '') || body.apiKey || body.key || body.api_key;
-    const keyInfo = resolveApiKeyLimitInfo(providedKey);
+    const keyInfo = await resolveApiKeyLimitInfo(providedKey);
 
     if (keyInfo.isKeySpecific) {
       if (keyInfo.status === 'revoked') {

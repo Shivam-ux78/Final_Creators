@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
-import { getStoredApiKeys, createNewApiKey, revokeApiKey, rotateApiKey } from '../../../lib/api-keys-storage';
+import {
+  getStoredApiKeysAsync,
+  createNewApiKeyAsync,
+  revokeApiKeyAsync,
+  rotateApiKeyAsync
+} from '../../../lib/api-keys-storage';
 
 // GET: List all API Keys with count summary
 export async function GET() {
   try {
-    const keys = getStoredApiKeys();
+    const keys = await getStoredApiKeysAsync();
     const activeKeys = keys.filter(k => k.status === 'active');
     const revokedKeys = keys.filter(k => k.status === 'revoked');
     const combinedDailyLimit = activeKeys.reduce((acc, k) => acc + (k.dailyLimit || 100), 0);
@@ -33,13 +38,14 @@ export async function POST(req: Request) {
 
     const keyName = (name || 'Production API Key').trim();
     const limitNum = typeof dailyLimit === 'number' && dailyLimit > 0 ? dailyLimit : Number(dailyLimit) || 500;
-    const newKey = createNewApiKey(keyName, limitNum);
+    const newKey = await createNewApiKeyAsync(keyName, limitNum);
+    const updatedKeys = await getStoredApiKeysAsync();
 
     return NextResponse.json({
       success: true,
       message: 'API Key successfully created!',
       apiKey: newKey,
-      keys: getStoredApiKeys()
+      keys: updatedKeys
     });
   } catch (error: any) {
     return NextResponse.json(
@@ -56,7 +62,7 @@ export async function PATCH(req: Request) {
     const { id } = body;
 
     const keyId = id || 'key_default_1';
-    const rotated = rotateApiKey(keyId);
+    const rotated = await rotateApiKeyAsync(keyId);
 
     if (!rotated) {
       return NextResponse.json(
@@ -65,11 +71,13 @@ export async function PATCH(req: Request) {
       );
     }
 
+    const updatedKeys = await getStoredApiKeysAsync();
+
     return NextResponse.json({
       success: true,
       message: `API Key "${rotated.name}" successfully rotated!`,
       rotatedKey: rotated,
-      keys: getStoredApiKeys()
+      keys: updatedKeys
     });
   } catch (error: any) {
     return NextResponse.json(
@@ -92,12 +100,13 @@ export async function DELETE(req: Request) {
       );
     }
 
-    revokeApiKey(id);
+    await revokeApiKeyAsync(id);
+    const updatedKeys = await getStoredApiKeysAsync();
 
     return NextResponse.json({
       success: true,
       message: 'API Key successfully revoked.',
-      keys: getStoredApiKeys()
+      keys: updatedKeys
     });
   } catch (error: any) {
     return NextResponse.json(

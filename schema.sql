@@ -69,23 +69,27 @@ USING (true)
 WITH CHECK (true);
 
 -- ==============================================================================
--- EMAIL SUPPRESSION LIST
--- Checked by /api/v1/send-mail before every send (fails closed if unreadable).
--- Managed via the MCP connector tools add_suppression / list_suppressions.
+-- API KEYS STORE TABLE
+-- Persists API Keys across serverless deployments, cold starts, and regions.
 -- ==============================================================================
-CREATE TABLE IF NOT EXISTS public.email_suppressions (
-    email TEXT PRIMARY KEY, -- stored lowercase
-    reason TEXT DEFAULT '',
-    source TEXT DEFAULT '',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+CREATE TABLE IF NOT EXISTS public.api_keys (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    key TEXT UNIQUE NOT NULL,
+    daily_limit INTEGER DEFAULT 500,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    last_used_at TIMESTAMP WITH TIME ZONE,
+    last_used_date TEXT,
+    today_sent_count INTEGER DEFAULT 0,
+    total_sent_count INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'active'
 );
 
-CREATE INDEX IF NOT EXISTS idx_email_suppressions_created_at ON public.email_suppressions(created_at);
+ALTER TABLE public.api_keys ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE public.email_suppressions ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Allow all operations on email_suppressions"
-ON public.email_suppressions
+CREATE POLICY "Allow all operations on api_keys"
+ON public.api_keys
 FOR ALL
 USING (true)
 WITH CHECK (true);
+
