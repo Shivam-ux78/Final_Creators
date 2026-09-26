@@ -13,6 +13,7 @@ const PUBLIC_PATHS = [
   '/api/auth/status',
   '/api/auth/sso',
   '/api/v1/send-mail',
+  '/api/v1/limit',
   '/favicon.ico'
 ];
 

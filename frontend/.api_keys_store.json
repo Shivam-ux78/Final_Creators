@@ -1,0 +1,16 @@
+{
+  "keys": [
+    {
+      "id": "key_default_1",
+      "name": "Default Production API Key",
+      "key": "mk_live_c523968ed2916242b78d8c65c25e9807",
+      "dailyLimit": 100,
+      "createdAt": "2026-09-26T12:27:17.919Z",
+      "todaySentCount": 0,
+      "totalSentCount": 0,
+      "lastUsedDate": "2026-09-26",
+      "status": "active"
+    }
+  ],
+  "updatedAt": "2026-09-26T12:27:17.919Z"
+}

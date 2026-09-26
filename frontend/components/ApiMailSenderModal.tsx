@@ -716,14 +716,32 @@ print(response.json())`;
           {activeTab === 'docs' && (
             <div className="space-y-6">
               <div className="p-4 rounded-xl bg-violet-50 border border-violet-200 text-xs text-violet-900 leading-relaxed">
-                <strong>Public API Endpoint:</strong> Send JSON requests to <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold font-mono text-violet-900">POST /api/v1/send-mail</code>.
-                Provide <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold">toEmail</code>, <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold">body</code>, and optional <code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold">subject</code>.
+                <strong>Public API Endpoints:</strong>
+                <ul className="list-disc list-inside mt-1.5 space-y-1">
+                  <li><code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold font-mono text-violet-900">POST /api/v1/send-mail</code> — Send email with 1➔2➔3 domain rotation.</li>
+                  <li><code className="bg-violet-100 px-1.5 py-0.5 rounded font-bold font-mono text-violet-900">GET /api/v1/limit</code> — Check your API Key's daily limit, today sent count & remaining quota.</li>
+                </ul>
+              </div>
+
+              {/* Check Limit Snippet */}
+              <div className="bg-slate-950 text-slate-100 rounded-xl p-4 border border-slate-800">
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                  <span className="text-xs font-bold text-emerald-400">Check Remaining Quota & Limit (GET /api/v1/limit)</span>
+                  <button
+                    onClick={() => copyToClipboard(`curl -X GET "${baseUrl}/api/v1/limit" -H "x-api-key: ${activeKeySample}"`, 'limitcurl')}
+                    className="flex items-center space-x-1 text-xs text-slate-400 hover:text-white"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    <span>{copiedCode === 'limitcurl' ? 'Copied!' : 'Copy cURL'}</span>
+                  </button>
+                </div>
+                <pre className="text-xs font-mono text-slate-300 overflow-x-auto whitespace-pre-wrap">{`curl -X GET "${baseUrl}/api/v1/limit" \\\n  -H "x-api-key: ${activeKeySample}"`}</pre>
               </div>
 
               {/* cURL Snippet */}
               <div className="bg-slate-950 text-slate-100 rounded-xl p-4 border border-slate-800">
                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                  <span className="text-xs font-bold text-slate-300">cURL Command</span>
+                  <span className="text-xs font-bold text-slate-300">Send Email cURL (POST /api/v1/send-mail)</span>
                   <button
                     onClick={() => copyToClipboard(curlCode, 'curl')}
                     className="flex items-center space-x-1 text-xs text-slate-400 hover:text-white"
