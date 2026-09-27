@@ -130,3 +130,12 @@ CREATE INDEX IF NOT EXISTS idx_email_logs_recipient ON public.email_logs(recipie
 CREATE INDEX IF NOT EXISTS idx_email_logs_message_id ON public.email_logs(message_id);
 CREATE INDEX IF NOT EXISTS idx_email_logs_status ON public.email_logs(status);
 
+ALTER TABLE public.email_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow all operations on email_logs"
+ON public.email_logs
+FOR ALL
+USING (true)
+WITH CHECK (true);
+
+
