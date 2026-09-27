@@ -111,7 +111,13 @@ export const TOOLS: ToolDefinition[] = [
 
       const suppression = await getSuppression(toEmail);
       if (suppression) {
-        throw new ToolError(`${toEmail} is on the suppression list${suppression.reason ? ` (${suppression.reason})` : ''}. Email not sent.`);
+        return {
+          success: false,
+          status: 'suppressed',
+          emailSent: false,
+          suppressed: true,
+          error: `${toEmail} is on the suppression list${suppression.reason ? ` (${suppression.reason})` : ''}. Email not sent.`
+        };
       }
 
       return callMailApi(ctx, '/api/v1/send-mail', {

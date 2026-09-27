@@ -233,6 +233,8 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           success: false,
+          status: 'failed',
+          emailSent: false,
           error: 'Missing required parameters. Please provide "toEmail" (or "to_email") and "body" (or "message").',
           examplePayload: {
             toEmail: 'creator@example.com',
@@ -256,6 +258,8 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           success: false,
+          status: 'failed',
+          emailSent: false,
           error: keyValidation.error || 'API Key validation failed.',
           keyName: keyValidation.keyItem?.name,
           todaySentCount: keyValidation.keyItem?.todaySentCount,
@@ -269,7 +273,13 @@ export async function POST(req: Request) {
     const suppression = await getSuppression(recipientEmail);
     if (suppression) {
       return NextResponse.json(
-        { success: false, error: `${recipientEmail} is on the suppression list. Email not sent.`, suppressed: true },
+        {
+          success: false,
+          status: 'suppressed',
+          emailSent: false,
+          error: `${recipientEmail} is on the suppression list. Email not sent.`,
+          suppressed: true
+        },
         { status: 409 }
       );
     }
@@ -281,6 +291,8 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           success: false,
+          status: 'limit_exceeded',
+          emailSent: false,
           error: `Daily limit of ${totalDailyLimit} emails reached for today. Engine paused to protect domain reputation.`,
           todaySentCount,
           dailyLimit: totalDailyLimit,
@@ -387,6 +399,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
+      status: 'sent',
+      emailSent: true,
+      message: `Email successfully sent to ${recipientEmail}`,
       messageId,
       senderEmail: sender.senderEmail,
       rotationStep: `Domain ${step} of ${totalSenders}`,
@@ -402,7 +417,12 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error('v1 Send Mail API Error:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to send email' },
+      {
+        success: false,
+        status: 'failed',
+        emailSent: false,
+        error: error.message || 'Failed to send email'
+      },
       { status: 500 }
     );
   }
