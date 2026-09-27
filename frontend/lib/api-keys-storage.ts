@@ -146,6 +146,13 @@ export async function rotateApiKeyAsync(id: string): Promise<ApiKeyItem | null> 
   return data ? fromRow(data) : null;
 }
 
+// Check a key is valid and active without recording usage (for read-only endpoints)
+export async function isActiveApiKeyAsync(keyString: string | null | undefined): Promise<boolean> {
+  if (!keyString || !keyString.trim()) return false;
+  const keyItem = await findKeyByValue(keyString.trim());
+  return !!keyItem && keyItem.status === 'active';
+}
+
 // Validate Key and Enforce Per-Key Daily Limit
 export async function validateAndRecordKeyUsageAsync(keyString: string): Promise<{
   valid: boolean;

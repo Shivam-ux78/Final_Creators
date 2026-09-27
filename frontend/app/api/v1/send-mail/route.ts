@@ -386,7 +386,7 @@ export async function POST(req: Request) {
 
     // 6. Record sent email in Supabase Database
     await recordEmailSent({
-      username: username || (recipientEmail.split('@')[0] || ''),
+      username: username || '', // never guess a creator from the email's local part
       email: recipientEmail,
       subject: finalSubject,
       body: messageBody,

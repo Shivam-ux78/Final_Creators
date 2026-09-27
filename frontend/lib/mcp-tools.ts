@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { getSuppression, addSuppression, listSuppressions, normalizeEmail } from './suppressions';
 import { getOrCreateConnectorKeyAsync } from './api-keys-storage';
+import { getSupabaseAdmin } from './supabase-admin';
 
 // Tools exposed by the MCP connector at /api/mcp.
 // Calls /api/v1/* with the connector's own auto-provisioned API key ("MCP Connector",
@@ -77,6 +78,19 @@ async function getRecipientStatus(email: string) {
   return (data || []).filter((r: any) => normalizeEmail(r.email || '') === email);
 }
 
+// Every send is logged in email_logs (creators and non-creators alike)
+async function getSendHistory(email: string) {
+  const { data, error } = await getSupabaseAdmin()
+    .from('email_logs')
+    .select('message_id, status, subject, sender_email, sent_at, updated_at')
+    .eq('recipient_email', email)
+    .order('sent_at', { ascending: false })
+    .limit(10);
+
+  if (error) throw new ToolError(`Failed to load send history: ${error.message}`);
+  return data || [];
+}
+
 export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_limit',
@@ -129,12 +143,12 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_status',
     title: 'Get mail status',
-    description: 'Get the mail service status or check real-time delivery status (sent, delivered, bounced, suppressed) for a specific email or Resend messageId.',
+    description: "Get the mail service status (today's count, remaining quota, next sender). With \"email\" or \"message_id\", also returns live delivery status from Resend (sent, delivered, bounced, complained, opened...), send history, and suppression status. \"delivered\" means the recipient's mail server accepted it; inbox vs spam placement is never observable.",
     inputSchema: {
       type: 'object',
       properties: {
         email: { type: 'string', description: 'Optional recipient email to look up.' },
-        message_id: { type: 'string', description: 'Optional Resend message ID (e.g. re_12345) to check live delivery status.' }
+        message_id: { type: 'string', description: 'Optional message ID returned by send_mail, to check live delivery status.' }
       },
       additionalProperties: false
     },
@@ -146,18 +160,25 @@ export const TOOLS: ToolDefinition[] = [
 
       if (!email && !messageId) return { service };
 
-      const liveDeliveryStatus = await callMailApi(ctx, `/api/v1/send-mail/status?${messageId ? `messageId=${encodeURIComponent(messageId)}` : `email=${encodeURIComponent(email!)}`}`, { method: 'GET' }).catch(() => null);
+      const liveDeliveryStatus = await callMailApi(ctx, `/api/v1/send-mail/status?${messageId ? `messageId=${encodeURIComponent(messageId)}` : `email=${encodeURIComponent(email!)}`}`, { method: 'GET' })
+        .catch((e: any) => ({ success: false, error: e.message || 'Delivery status lookup failed' }));
 
       let recipientInfo: any = null;
       if (email) {
-        const [records, suppression] = await Promise.all([getRecipientStatus(email), getSuppression(email)]);
+        const [creatorRecords, history, suppression] = await Promise.all([
+          getRecipientStatus(email),
+          getSendHistory(email),
+          getSuppression(email)
+        ]);
         recipientInfo = {
           email,
           suppressed: !!suppression,
           suppression,
-          alreadyEmailed: records.some((r: any) => r.email_status === 'sent' || r.email_status === 'delivered'),
-          latestEmailStatus: records[0]?.email_status || 'not_sent',
-          records
+          alreadyEmailed: history.length > 0 || creatorRecords.some((r: any) => r.email_status && r.email_status !== 'not_sent'),
+          timesEmailed: history.length,
+          isCreator: creatorRecords.length > 0,
+          sendHistory: history,
+          creatorRecords
         };
       }
 

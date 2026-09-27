@@ -112,6 +112,7 @@ REVOKE ALL ON public.email_suppressions FROM anon, authenticated;
 
 -- ==============================================================================
 -- EMAIL LOGS & AUDIT TRAIL TABLE
+-- One row per send (all recipients). Source of truth for history and daily counts.
 -- Tracks real-time delivery status updates ('sent', 'delivered', 'bounced', 'opened').
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.email_logs (
@@ -133,11 +134,8 @@ CREATE INDEX IF NOT EXISTS idx_email_logs_status ON public.email_logs(status);
 
 ALTER TABLE public.email_logs ENABLE ROW LEVEL SECURITY;
 
+-- Server-only (SUPABASE_SECRET_KEY): holds every email body, so no public access
 DROP POLICY IF EXISTS "Allow all operations on email_logs" ON public.email_logs;
-CREATE POLICY "Allow all operations on email_logs"
-ON public.email_logs
-FOR ALL
-USING (true)
-WITH CHECK (true);
+REVOKE ALL ON public.email_logs FROM anon, authenticated;
 
 
