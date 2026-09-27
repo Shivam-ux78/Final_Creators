@@ -129,30 +129,42 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_status',
     title: 'Get mail status',
-    description: 'Get the mail service status (next sender, preset subjects, today\'s count, remaining quota). If "email" is given, also returns whether that recipient was already emailed and whether they are suppressed.',
+    description: 'Get the mail service status or check real-time delivery status (sent, delivered, bounced, suppressed) for a specific email or Resend messageId.',
     inputSchema: {
       type: 'object',
       properties: {
-        email: { type: 'string', description: 'Optional recipient email to look up.' }
+        email: { type: 'string', description: 'Optional recipient email to look up.' },
+        message_id: { type: 'string', description: 'Optional Resend message ID (e.g. re_12345) to check live delivery status.' }
       },
       additionalProperties: false
     },
     annotations: { readOnlyHint: true, openWorldHint: false },
     handler: async (args, ctx) => {
       const service = await callMailApi(ctx, '/api/v1/send-mail', { method: 'GET' });
-      if (args.email === undefined || args.email === '') return { service };
+      const email = args.email ? requireEmail(args.email, 'email') : undefined;
+      const messageId = optionalString(args.message_id, 'message_id', 100);
 
-      const email = requireEmail(args.email, 'email');
-      const [records, suppression] = await Promise.all([getRecipientStatus(email), getSuppression(email)]);
-      return {
-        service,
-        recipient: {
+      if (!email && !messageId) return { service };
+
+      const liveDeliveryStatus = await callMailApi(ctx, `/api/v1/send-mail/status?${messageId ? `messageId=${encodeURIComponent(messageId)}` : `email=${encodeURIComponent(email!)}`}`, { method: 'GET' }).catch(() => null);
+
+      let recipientInfo: any = null;
+      if (email) {
+        const [records, suppression] = await Promise.all([getRecipientStatus(email), getSuppression(email)]);
+        recipientInfo = {
           email,
           suppressed: !!suppression,
           suppression,
-          alreadyEmailed: records.some((r: any) => r.email_status === 'sent'),
+          alreadyEmailed: records.some((r: any) => r.email_status === 'sent' || r.email_status === 'delivered'),
+          latestEmailStatus: records[0]?.email_status || 'not_sent',
           records
-        }
+        };
+      }
+
+      return {
+        service,
+        deliveryStatus: liveDeliveryStatus,
+        recipient: recipientInfo
       };
     }
   },

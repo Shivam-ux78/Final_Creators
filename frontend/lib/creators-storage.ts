@@ -77,6 +77,7 @@ export async function recordEmailSent(params: {
           body,
           message_id: messageId,
           sender_email: senderEmail,
+          status: 'sent',
           sent_at: nowIso
         }
       ]);
@@ -85,6 +86,49 @@ export async function recordEmailSent(params: {
     }
   } catch (e) {
     console.warn('Supabase status update error:', e);
+  }
+}
+
+// 2b. Update real-time email delivery status (from Resend webhooks or live polling)
+export async function updateEmailDeliveryStatus(params: {
+  messageId?: string;
+  email?: string;
+  status: 'sent' | 'delivered' | 'bounced' | 'complained' | 'opened' | 'clicked' | 'failed';
+  reason?: string;
+}) {
+  const { messageId, email, status, reason } = params;
+  const nowIso = new Date().toISOString();
+  const cleanEmail = (email || '').toLowerCase().trim();
+
+  try {
+    // 1. Update email_logs table
+    if (messageId) {
+      await supabase.from('email_logs').update({
+        status,
+        updated_at: nowIso
+      }).eq('message_id', messageId);
+    } else if (cleanEmail) {
+      await supabase.from('email_logs').update({
+        status,
+        updated_at: nowIso
+      }).eq('recipient_email', cleanEmail);
+    }
+
+    // 2. Update creators table email_status
+    if (cleanEmail) {
+      await supabase.from('creators').update({
+        email_status: status,
+        updated_at: nowIso
+      }).ilike('email', cleanEmail);
+    }
+
+    // 3. Auto-suppress if email bounced or received complaint
+    if ((status === 'bounced' || status === 'complained') && cleanEmail) {
+      const { addSuppression } = await import('./suppressions');
+      await addSuppression(cleanEmail, reason || `Automatic suppression due to Resend ${status} event`, 'resend_webhook');
+    }
+  } catch (e) {
+    console.warn('Error updating email delivery status:', e);
   }
 }
 
