@@ -62,6 +62,7 @@ CREATE TRIGGER trigger_creators_updated_at
 ALTER TABLE public.creators ENABLE ROW LEVEL SECURITY;
 
 -- Allow public read/write if using anon key, or service_role bypasses RLS
+DROP POLICY IF EXISTS "Allow all operations for authenticated and anon users" ON public.creators;
 CREATE POLICY "Allow all operations for authenticated and anon users" 
 ON public.creators 
 FOR ALL 
@@ -132,6 +133,7 @@ CREATE INDEX IF NOT EXISTS idx_email_logs_status ON public.email_logs(status);
 
 ALTER TABLE public.email_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow all operations on email_logs" ON public.email_logs;
 CREATE POLICY "Allow all operations on email_logs"
 ON public.email_logs
 FOR ALL
