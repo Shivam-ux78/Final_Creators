@@ -318,7 +318,7 @@ print(response.json())`;
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Generate API Keys & send emails programmatically. Rotates 50 senders across 10 non-.nyc domains & 5 prefixes (collab, outreach, aryan, shivam, hello).
+                Generate API Keys & send emails programmatically. Rotates 45 senders across 9 domains & 5 prefixes (collab, outreach, aryan, shivam, hello).
               </p>
             </div>
           </div>
@@ -336,7 +336,7 @@ print(response.json())`;
           <div className="flex items-center space-x-3">
             <span className="text-slate-400 font-bold uppercase tracking-wider text-[11px]">Auto Rotation:</span>
             <span className="px-2.5 py-1 rounded bg-violet-900/50 border border-violet-700/60 text-violet-200 font-mono font-bold text-[11px]">
-              10 Domains × 5 Prefixes (50 Senders • No .nyc)
+              9 Domains × 5 Prefixes (45 Senders • No .nyc / .info)
             </span>
           </div>
 

@@ -44,15 +44,13 @@ if hasattr(sys.stdout, 'reconfigure'):
 load_dotenv(".env")
 load_dotenv("frontend/.env.local")
 
-RESEND_KEY_1 = os.environ.get("RESEND_API_KEY")
-RESEND_KEY_2 = os.environ.get("RESEND_API_KEY_2")
+RESEND_KEY = os.environ.get("RESEND_API_KEY_2") or os.environ.get("RESEND_API_KEY")
 
 # 5 requested prefixes
 PREFIXES = ["collab", "outreach", "aryan", "shivam", "hello"]
 
-# All 10 verified non-.nyc domains
-DOMAINS_KEY_1 = ["makeable.info"]
-DOMAINS_KEY_2 = [
+# 9 verified active domains (excluding .nyc and .info)
+DOMAINS = [
     "makeable.digital",
     "makeable.live",
     "makeable.email",
@@ -65,22 +63,13 @@ DOMAINS_KEY_2 = [
 ]
 
 ACCOUNTS = []
-for dom in DOMAINS_KEY_1:
+for dom in DOMAINS:
     for prefix in PREFIXES:
         ACCOUNTS.append({
             "name": "MakeAble Partnerships",
             "email": f"{prefix}@{dom}",
             "domain": dom,
-            "key": RESEND_KEY_1 or RESEND_KEY_2
-        })
-
-for dom in DOMAINS_KEY_2:
-    for prefix in PREFIXES:
-        ACCOUNTS.append({
-            "name": "MakeAble Partnerships",
-            "email": f"{prefix}@{dom}",
-            "domain": dom,
-            "key": RESEND_KEY_2 or RESEND_KEY_1
+            "key": RESEND_KEY
         })
 
 
