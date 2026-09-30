@@ -8,6 +8,8 @@ import { validateAndRecordKeyUsageAsync } from '../../../../lib/api-keys-storage
 import { verifySessionToken, AUTH_COOKIE_NAME } from '../../../../lib/auth';
 import { getSuppression } from '../../../../lib/suppressions';
 
+import { getConfiguredSenders } from '../../../../lib/senders-config';
+
 // Logged-in dashboard users may send and edit presets without an API key
 function hasDashboardSession(): boolean {
   return verifySessionToken(cookies().get(AUTH_COOKIE_NAME)?.value).valid;
@@ -19,28 +21,6 @@ function presetsUnauthorized() {
     { status: 401 }
   );
 }
-
-// 3 Configured Sender Domains
-const SENDER_ACCOUNTS = [
-  {
-    id: 'sender_1',
-    senderName: 'MakeAble Partnerships',
-    senderEmail: 'collab@makeable.work',
-    label: 'Domain 1: collab@makeable.work'
-  },
-  {
-    id: 'sender_2',
-    senderName: 'MakeAble Partnerships',
-    senderEmail: 'collab@makeable.website',
-    label: 'Domain 2: collab@makeable.website'
-  },
-  {
-    id: 'sender_3',
-    senderName: 'MakeAble Partnerships',
-    senderEmail: 'collab@makeable.online',
-    label: 'Domain 3: collab@makeable.online'
-  }
-];
 
 // Persistent state files
 const ROTATION_FILE = path.join(process.cwd(), '.sender_rotation_v1.json');
@@ -89,8 +69,17 @@ function savePresetSubjects(subjects: string[]): boolean {
   }
 }
 
-// Helper for round robin rotation (1 -> 2 -> 3 -> 1 -> 2 -> 3...)
+// Helper for round robin rotation across all configured accounts
 function getNextRotatedSender() {
+  const accounts = getConfiguredSenders();
+  const sendersList = accounts.length > 0 ? accounts : [{
+    id: 'sender_fallback',
+    apiKey: process.env.RESEND_API_KEY_2 || process.env.RESEND_API_KEY || '',
+    senderName: 'MakeAble Partnerships',
+    senderEmail: 'collab@makeable.work',
+    label: 'MakeAble Partnerships (collab@makeable.work)'
+  }];
+
   let lastIndex = -1;
   try {
     if (fs.existsSync(ROTATION_FILE)) {
@@ -102,7 +91,7 @@ function getNextRotatedSender() {
     lastIndex = -1;
   }
 
-  const nextIndex = (lastIndex + 1) % SENDER_ACCOUNTS.length;
+  const nextIndex = (lastIndex + 1) % sendersList.length;
 
   try {
     fs.writeFileSync(
@@ -115,9 +104,10 @@ function getNextRotatedSender() {
   }
 
   return {
-    step: nextIndex + 1, // 1, 2, or 3
-    totalSenders: SENDER_ACCOUNTS.length,
-    sender: SENDER_ACCOUNTS[nextIndex]
+    step: nextIndex + 1,
+    totalSenders: sendersList.length,
+    sender: sendersList[nextIndex],
+    allSenders: sendersList
   };
 }
 
@@ -127,6 +117,8 @@ export async function GET() {
     const todaySentCount = await getTodaySentCountFromSupabase();
     const { totalDailyLimit } = getDailyLimitInfo();
     const presetSubjects = getPresetSubjects();
+    const accounts = getConfiguredSenders();
+    const rotationOrder = accounts.map(a => a.senderEmail);
 
     let lastIndex = 0;
     try {
@@ -136,11 +128,15 @@ export async function GET() {
       }
     } catch (e) {}
 
+    const currentNextSender = accounts.length > 0
+      ? accounts[(lastIndex + 1) % accounts.length].senderEmail
+      : 'collab@makeable.work';
+
     return NextResponse.json({
       success: true,
       service: 'MakeAble Round-Robin Mail Sender API v1',
-      rotationOrder: ['collab@makeable.work', 'collab@makeable.website', 'collab@makeable.online'],
-      currentNextSender: SENDER_ACCOUNTS[(lastIndex + 1) % SENDER_ACCOUNTS.length].senderEmail,
+      rotationOrder,
+      currentNextSender,
       presetSubjects,
       todaySentCount,
       dailyLimit: totalDailyLimit,
@@ -302,15 +298,15 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Perform 1 -> 2 -> 3 Round Robin Sender Rotation
-    const { step, totalSenders, sender } = getNextRotatedSender();
+    // 2. Perform Round Robin Sender Rotation
+    const { step, totalSenders, sender, allSenders } = getNextRotatedSender();
 
     // 3. Resolve Subject Line (User-provided subject takes priority; fallback to rotating preset list)
     const presetSubjects = getPresetSubjects();
     const finalSubject = userSubject || presetSubjects[(step - 1) % presetSubjects.length];
 
     // 4. Resolve API Key & HTML rendering
-    const resendApiKey = process.env.RESEND_API_KEY_2 || process.env.RESEND_API_KEY || '';
+    const resendApiKey = sender.apiKey || process.env.RESEND_API_KEY_2 || process.env.RESEND_API_KEY || '';
     const replyToEmail = process.env.REPLY_TO_EMAIL || 'support@makeable.nyc';
 
     const renderEmailToHtml = (rawText: string) => {
@@ -404,8 +400,8 @@ export async function POST(req: Request) {
       message: `Email successfully sent to ${recipientEmail}`,
       messageId,
       senderEmail: sender.senderEmail,
-      rotationStep: `Domain ${step} of ${totalSenders}`,
-      nextDomainWillBe: SENDER_ACCOUNTS[step % totalSenders].senderEmail,
+      rotationStep: `Sender ${step} of ${totalSenders}`,
+      nextDomainWillBe: allSenders[step % totalSenders].senderEmail,
       sentAt: nowIso,
       toEmail: recipientEmail,
       subject: finalSubject,

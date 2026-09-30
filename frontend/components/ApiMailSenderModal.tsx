@@ -318,7 +318,7 @@ print(response.json())`;
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Generate API Keys & send emails programmatically. Rotates domains: <code>.work</code> ➔ <code>.website</code> ➔ <code>.online</code>.
+                Generate API Keys & send emails programmatically. Rotates 50 senders across 10 non-.nyc domains & 5 prefixes (collab, outreach, aryan, shivam, hello).
               </p>
             </div>
           </div>
@@ -333,25 +333,15 @@ print(response.json())`;
 
         {/* Live Rotation Banner */}
         <div className="bg-slate-900 text-slate-200 px-6 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4 text-xs shrink-0">
-          <div className="flex items-center space-x-4">
-            <span className="text-slate-400 font-bold uppercase tracking-wider text-[11px]">3-Domain Rotation:</span>
-            <div className="flex items-center space-x-2">
-              <span className={`px-2 py-0.5 rounded font-mono font-bold ${stats?.currentNextSender === 'collab@makeable.work' ? 'bg-violet-600 text-white shadow-sm' : 'bg-slate-800 text-slate-400'}`}>
-                1. .work
-              </span>
-              <span className="text-slate-600">➔</span>
-              <span className={`px-2 py-0.5 rounded font-mono font-bold ${stats?.currentNextSender === 'collab@makeable.website' ? 'bg-violet-600 text-white shadow-sm' : 'bg-slate-800 text-slate-400'}`}>
-                2. .website
-              </span>
-              <span className="text-slate-600">➔</span>
-              <span className={`px-2 py-0.5 rounded font-mono font-bold ${stats?.currentNextSender === 'collab@makeable.online' ? 'bg-violet-600 text-white shadow-sm' : 'bg-slate-800 text-slate-400'}`}>
-                3. .online
-              </span>
-            </div>
+          <div className="flex items-center space-x-3">
+            <span className="text-slate-400 font-bold uppercase tracking-wider text-[11px]">Auto Rotation:</span>
+            <span className="px-2.5 py-1 rounded bg-violet-900/50 border border-violet-700/60 text-violet-200 font-mono font-bold text-[11px]">
+              10 Domains × 5 Prefixes (50 Senders • No .nyc)
+            </span>
           </div>
 
           <div className="flex items-center space-x-4">
-            <span className="text-slate-400">Next Sender: <strong className="text-emerald-400 font-mono">{stats?.currentNextSender}</strong></span>
+            <span className="text-slate-400">Next Active Sender: <strong className="text-emerald-400 font-mono">{stats?.currentNextSender || 'collab@makeable.work'}</strong></span>
             <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
               Quota: {stats?.remainingQuota ?? '...'} remaining
             </span>

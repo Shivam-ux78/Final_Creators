@@ -32,10 +32,26 @@ export default function EmailModal({
   const [isSending, setIsSending] = useState(false);
   const [sendStatus, setSendStatus] = useState<{ success?: boolean; message?: string; method?: string } | null>(null);
 
+  const [availableSenders, setAvailableSenders] = useState<string[]>([]);
+
   // Auto-fill recipient email and generate pitch when modal opens
   useEffect(() => {
     if (isOpen) {
       setSendStatus(null);
+
+      fetch('/api/send-email')
+        .then(res => res.json())
+        .then(data => {
+          if (data.configuredSenders && data.configuredSenders.length > 0) {
+            const list = data.configuredSenders.map((s: any) => s.email);
+            setAvailableSenders(list);
+            if (!senderDomain || !list.includes(senderDomain)) {
+              setSenderDomain(list[0]);
+            }
+          }
+        })
+        .catch(err => console.warn('Failed to load senders list:', err));
+
       if (creator) {
         setRecipientEmail(creator.email || '');
         if (creator.email_subject && creator.email_body) {
@@ -233,9 +249,17 @@ export default function EmailModal({
                 onChange={(e) => setSenderDomain(e.target.value)}
                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg font-mono font-semibold text-slate-900 text-xs focus:ring-2 focus:ring-violet-500 focus:outline-none"
               >
-                <option value="collab@makeable.work">collab@makeable.work</option>
-                <option value="collab@makeable.website">collab@makeable.website</option>
-                <option value="collab@makeable.online">collab@makeable.online</option>
+                {availableSenders.length > 0 ? (
+                  availableSenders.map(email => (
+                    <option key={email} value={email}>{email}</option>
+                  ))
+                ) : (
+                  <>
+                    <option value="collab@makeable.work">collab@makeable.work</option>
+                    <option value="collab@makeable.website">collab@makeable.website</option>
+                    <option value="collab@makeable.online">collab@makeable.online</option>
+                  </>
+                )}
               </select>
             </div>
 

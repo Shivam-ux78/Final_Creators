@@ -103,7 +103,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'send_mail',
     title: 'Send email',
-    description: 'Send one email through the MakeAble sender rotation (collab@makeable.work / .website / .online). Suppressed recipients are refused. If no subject is given, a preset subject is used. Counts against the daily limit.',
+    description: 'Send one email through the MakeAble sender rotation (50 senders across 10 non-.nyc domains and 5 prefixes: collab, outreach, aryan, shivam, hello). Suppressed recipients are refused. If no subject is given, a preset subject is used. Counts against the daily limit.',
     inputSchema: {
       type: 'object',
       properties: {

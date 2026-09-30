@@ -44,29 +44,45 @@ if hasattr(sys.stdout, 'reconfigure'):
 load_dotenv(".env")
 load_dotenv("frontend/.env.local")
 
-RESEND_KEY = os.environ.get("RESEND_API_KEY_2")
+RESEND_KEY_1 = os.environ.get("RESEND_API_KEY")
+RESEND_KEY_2 = os.environ.get("RESEND_API_KEY_2")
 
-# 3 Target Domains (NO .nyc, NO .info)
-ACCOUNTS = [
-    {
-        "name": "MakeAble Partnerships",
-        "email": "collab@makeable.work",
-        "domain": "makeable.work",
-        "key": RESEND_KEY
-    },
-    {
-        "name": "MakeAble Partnerships",
-        "email": "collab@makeable.website",
-        "domain": "makeable.website",
-        "key": RESEND_KEY
-    },
-    {
-        "name": "MakeAble Partnerships",
-        "email": "collab@makeable.online",
-        "domain": "makeable.online",
-        "key": RESEND_KEY
-    }
+# 5 requested prefixes
+PREFIXES = ["collab", "outreach", "aryan", "shivam", "hello"]
+
+# All 10 verified non-.nyc domains
+DOMAINS_KEY_1 = ["makeable.info"]
+DOMAINS_KEY_2 = [
+    "makeable.digital",
+    "makeable.live",
+    "makeable.email",
+    "makeable.solutions",
+    "makeable.space",
+    "makeable.cloud",
+    "makeable.work",
+    "makeable.website",
+    "makeable.online"
 ]
+
+ACCOUNTS = []
+for dom in DOMAINS_KEY_1:
+    for prefix in PREFIXES:
+        ACCOUNTS.append({
+            "name": "MakeAble Partnerships",
+            "email": f"{prefix}@{dom}",
+            "domain": dom,
+            "key": RESEND_KEY_1 or RESEND_KEY_2
+        })
+
+for dom in DOMAINS_KEY_2:
+    for prefix in PREFIXES:
+        ACCOUNTS.append({
+            "name": "MakeAble Partnerships",
+            "email": f"{prefix}@{dom}",
+            "domain": dom,
+            "key": RESEND_KEY_2 or RESEND_KEY_1
+        })
+
 
 REPLY_TO = "support@makeable.nyc"
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
