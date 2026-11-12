@@ -232,6 +232,7 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       service: 'MakeAble Round-Robin Mail Sender API v1',
+      defaultReplyTo: process.env.REPLY_TO_EMAIL || 'support@makeable.nyc',
       rotationOrder,
       availableSenders,
       senderCounts,
@@ -325,7 +326,11 @@ export async function POST(req: Request) {
       senderName,
       sender_name,
       fromName,
-      from_name
+      from_name,
+      replyTo,
+      reply_to,
+      replyToEmail,
+      reply_to_email
     } = bodyData;
 
     const recipientEmail = (toEmail || to_email || '').trim();
@@ -333,6 +338,7 @@ export async function POST(req: Request) {
     const userSubject = (subject || subjectLine || subject_line || '').trim();
     const requestedFromEmail = (fromEmail || from_email || senderEmail || sender_email || '').trim();
     const requestedSenderName = (senderName || sender_name || fromName || from_name || '').trim();
+    const requestedReplyTo = (replyTo || reply_to || replyToEmail || reply_to_email || '').trim();
 
     if (!recipientEmail || !messageBody) {
       return NextResponse.json(
@@ -435,9 +441,24 @@ export async function POST(req: Request) {
     const presetSubjects = getPresetSubjects();
     const finalSubject = userSubject || presetSubjects[(step - 1) % presetSubjects.length];
 
-    // 4. Resolve API Key & HTML rendering
+    // 4. Resolve Reply-To & API Key & HTML rendering
     const resendApiKey = sender.apiKey || process.env.RESEND_API_KEY_2 || process.env.RESEND_API_KEY || '';
-    const replyToEmail = process.env.REPLY_TO_EMAIL || 'support@makeable.nyc';
+
+    const isHrSender =
+      sender.category === 'hr' ||
+      /^(hr|careers|talent|hiring|recruiting|people|jobs)@/i.test(sender.senderEmail);
+
+    let effectiveReplyTo = requestedReplyTo || keyValidation.keyItem?.replyTo;
+
+    if (!effectiveReplyTo) {
+      if (isHrSender) {
+        // HR TEAM cannot set support@makeable.nyc as Reply-To; replies would go to rotating sender addresses
+        // or misrouted customer support. Default to the actual sender address so candidate replies go straight to HR.
+        effectiveReplyTo = sender.senderEmail;
+      } else {
+        effectiveReplyTo = process.env.REPLY_TO_EMAIL || 'support@makeable.nyc';
+      }
+    }
 
     const renderEmailToHtml = (rawText: string) => {
       let formatted = rawText;
@@ -490,10 +511,10 @@ export async function POST(req: Request) {
       const resendData = await resend.emails.send({
         from: `${effectiveSenderName} <${sender.senderEmail}>`,
         to: [recipientEmail],
-        replyTo: replyToEmail,
-        reply_to: replyToEmail as any,
+        replyTo: effectiveReplyTo,
+        reply_to: effectiveReplyTo as any,
         headers: {
-          'Reply-To': replyToEmail
+          'Reply-To': effectiveReplyTo
         },
         subject: finalSubject,
         html: htmlBody,
@@ -530,6 +551,7 @@ export async function POST(req: Request) {
       message: `Email successfully sent to ${recipientEmail}`,
       messageId,
       senderEmail: sender.senderEmail,
+      replyTo: effectiveReplyTo,
       rotationStep: `Sender ${step} of ${totalSenders}`,
       nextDomainWillBe: allSenders[step % totalSenders].senderEmail,
       sentAt: nowIso,

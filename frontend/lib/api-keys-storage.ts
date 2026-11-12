@@ -14,6 +14,7 @@ export interface ApiKeyItem {
   dailyLimit: number;
   allowedSenders?: string[];
   customSenderName?: string;
+  replyTo?: string;
   createdAt: string;
   lastUsedAt?: string;
   lastUsedDate?: string; // YYYY-MM-DD for tracking today's limit reset
@@ -28,6 +29,7 @@ const KEY_SENDERS_FALLBACK_FILE = path.join(process.cwd(), '.api_key_senders.jso
 type KeySenderPrefs = {
   allowedSenders?: string[];
   customSenderName?: string;
+  replyTo?: string;
 };
 
 function readKeySenderPrefsMap(): Record<string, KeySenderPrefs> {
@@ -76,6 +78,9 @@ function fromRow(k: any, prefsMap?: Record<string, KeySenderPrefs>): ApiKeyItem 
   const customSenderName =
     (typeof k.custom_sender_name === 'string' && k.custom_sender_name.trim() ? k.custom_sender_name.trim() : undefined) ??
     (fallbackPrefs?.customSenderName?.trim() || undefined);
+  const replyTo =
+    (typeof k.reply_to === 'string' && k.reply_to.trim() ? k.reply_to.trim() : undefined) ??
+    (fallbackPrefs?.replyTo?.trim() || undefined);
 
   return {
     id: k.id,
@@ -84,6 +89,7 @@ function fromRow(k: any, prefsMap?: Record<string, KeySenderPrefs>): ApiKeyItem 
     dailyLimit: typeof k.daily_limit === 'number' && k.daily_limit > 0 ? k.daily_limit : 500,
     allowedSenders,
     customSenderName,
+    replyTo,
     createdAt: k.created_at || new Date().toISOString(),
     lastUsedAt: k.last_used_at || undefined,
     lastUsedDate: k.last_used_date || undefined,
@@ -119,11 +125,13 @@ export async function createNewApiKeyAsync(
   name: string,
   dailyLimit?: number,
   allowedSenders?: string[],
-  customSenderName?: string
+  customSenderName?: string,
+  replyTo?: string
 ): Promise<ApiKeyItem> {
   const limit = typeof dailyLimit === 'number' && dailyLimit > 0 ? dailyLimit : 500;
   const cleanSenders = normalizeAllowedSenders(allowedSenders);
   const cleanCustomName = customSenderName?.trim() || undefined;
+  const cleanReplyTo = replyTo?.trim() || undefined;
   const keyId = 'key_' + Date.now();
 
   const basePayload: Record<string, any> = {
@@ -138,10 +146,11 @@ export async function createNewApiKeyAsync(
     status: 'active'
   };
 
-  if (cleanSenders || cleanCustomName) {
+  if (cleanSenders || cleanCustomName || cleanReplyTo) {
     writeKeySenderPrefs(keyId, {
       allowedSenders: cleanSenders,
-      customSenderName: cleanCustomName
+      customSenderName: cleanCustomName,
+      replyTo: cleanReplyTo
     });
   }
 
@@ -150,12 +159,13 @@ export async function createNewApiKeyAsync(
     .insert({
       ...basePayload,
       allowed_senders: cleanSenders ?? null,
-      custom_sender_name: cleanCustomName ?? null
+      custom_sender_name: cleanCustomName ?? null,
+      reply_to: cleanReplyTo ?? null
     })
     .select('*')
     .single();
 
-  if (error && /allowed_senders|custom_sender_name|schema cache|column/i.test(error.message)) {
+  if (error && /allowed_senders|custom_sender_name|reply_to|schema cache|column/i.test(error.message)) {
     const retry = await getSupabaseAdmin()
       .from(TABLE)
       .insert(basePayload)
@@ -172,27 +182,36 @@ export async function createNewApiKeyAsync(
 export async function updateApiKeySendersAsync(
   id: string,
   allowedSenders?: string[],
-  customSenderName?: string
+  customSenderName?: string,
+  replyTo?: string
 ): Promise<ApiKeyItem | null> {
   const cleanSenders = normalizeAllowedSenders(allowedSenders);
   const cleanCustomName = customSenderName?.trim() || undefined;
+  const cleanReplyTo = replyTo !== undefined ? (replyTo?.trim() || undefined) : undefined;
 
+  const existingPrefs = readKeySenderPrefsMap()[id] || {};
   writeKeySenderPrefs(id, {
     allowedSenders: cleanSenders,
-    customSenderName: cleanCustomName
+    customSenderName: cleanCustomName,
+    replyTo: replyTo !== undefined ? cleanReplyTo : existingPrefs.replyTo
   });
+
+  const updatePayload: Record<string, any> = {
+    allowed_senders: cleanSenders ?? null,
+    custom_sender_name: cleanCustomName ?? null
+  };
+  if (replyTo !== undefined) {
+    updatePayload.reply_to = cleanReplyTo ?? null;
+  }
 
   const { data, error } = await getSupabaseAdmin()
     .from(TABLE)
-    .update({
-      allowed_senders: cleanSenders ?? null,
-      custom_sender_name: cleanCustomName ?? null
-    })
+    .update(updatePayload)
     .eq('id', id)
     .select('*')
     .maybeSingle();
 
-  if (error && /allowed_senders|custom_sender_name|schema cache|column/i.test(error.message)) {
+  if (error && /allowed_senders|custom_sender_name|reply_to|schema cache|column/i.test(error.message)) {
     const existing = await getSupabaseAdmin().from(TABLE).select('*').eq('id', id).maybeSingle();
     if (existing.error) throw new Error(`Failed to update API key senders: ${existing.error.message}`);
     return existing.data ? fromRow(existing.data) : null;

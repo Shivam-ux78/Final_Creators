@@ -36,6 +36,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   const [selectedSenderEmails, setSelectedSenderEmails] = useState<string[]>([]);
   const [senderSearch, setSenderSearch] = useState('');
   const [newKeyCustomSenderName, setNewKeyCustomSenderName] = useState('');
+  const [newKeyReplyTo, setNewKeyReplyTo] = useState('');
 
   // Custom Sender Creation
   const [customEmailInput, setCustomEmailInput] = useState('');
@@ -46,6 +47,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
   const [editingKeySenders, setEditingKeySenders] = useState<string[]>([]);
   const [editingKeyCustomName, setEditingKeyCustomName] = useState('');
+  const [editingKeyReplyTo, setEditingKeyReplyTo] = useState('');
   const [isSavingKeySenders, setIsSavingKeySenders] = useState(false);
 
   // API Keys state
@@ -56,6 +58,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
     dailyLimit: number;
     allowedSenders?: string[];
     customSenderName?: string;
+    replyTo?: string;
     todaySentCount?: number;
     totalSentCount?: number;
     createdAt: string;
@@ -73,6 +76,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   const [body, setBody] = useState('Hello! This is a test message sent via the MakeAble Round-Robin Mail Sender API.');
   const [testFromEmail, setTestFromEmail] = useState('');
   const [testSenderName, setTestSenderName] = useState('');
+  const [testReplyTo, setTestReplyTo] = useState('');
   
   // Preset Subjects Edit State
   const [presetSubjectsList, setPresetSubjectsList] = useState<string[]>([]);
@@ -158,7 +162,8 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
           name: newKeyName.trim() || 'Production API Key',
           dailyLimit: Number(newKeyDailyLimit) || 500,
           allowedSenders: allSelected ? undefined : selectedSenderEmails,
-          customSenderName: newKeyCustomSenderName.trim() || undefined
+          customSenderName: newKeyCustomSenderName.trim() || undefined,
+          replyTo: newKeyReplyTo.trim() || undefined
         })
       });
       const data = await res.json();
@@ -167,6 +172,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
         setNewKeyName('');
         setNewKeyDailyLimit('500');
         setNewKeyCustomSenderName('');
+        setNewKeyReplyTo('');
         fetchStatsAndKeys();
       } else {
         alert(data.error || 'Failed to create API key.');
@@ -238,7 +244,8 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
         body: JSON.stringify({
           id: keyId,
           allowedSenders: allSelected ? [] : editingKeySenders,
-          customSenderName: editingKeyCustomName.trim() || ''
+          customSenderName: editingKeyCustomName.trim() || '',
+          replyTo: editingKeyReplyTo.trim() || ''
         })
       });
       const data = await res.json();
@@ -315,6 +322,9 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
       }
       if (testSenderName.trim()) {
         payload.senderName = testSenderName.trim();
+      }
+      if (testReplyTo.trim()) {
+        payload.replyTo = testReplyTo.trim();
       }
 
       const res = await fetch('/api/v1/send-mail', {
@@ -400,6 +410,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   -d '{
     "toEmail": "${toEmail || 'recipient@example.com'}",
     "subject": "${subject || 'Custom Subject Line Here (Optional)'}",
+    "replyTo": "${testReplyTo || 'hr@makeable.work'}",
     "body": "${body.replace(/\n/g, '\\n') || 'Hi there! We would love to collaborate.'}"
   }'`;
 
@@ -412,6 +423,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   body: JSON.stringify({
     toEmail: '${toEmail || 'recipient@example.com'}',
     subject: '${subject || 'Custom Subject Line Here (Optional)'}',
+    replyTo: '${testReplyTo || 'hr@makeable.work'}',
     body: \`${body || 'Hi there!'}\`
   })
 });
@@ -429,6 +441,7 @@ headers = {
 payload = {
     "toEmail": "${toEmail || 'recipient@example.com'}",
     "subject": "${subject || 'Custom Subject Line Here (Optional)'}",
+    "replyTo": "${testReplyTo || 'hr@makeable.work'}",
     "body": "${body.replace(/\n/g, '\\n') || 'Hi there!'}"
 }
 
@@ -605,6 +618,46 @@ print(response.json())`;
                     </div>
                   </div>
 
+                  {/* Reply-To Email Field for New Key */}
+                  <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
+                    <div className="w-full sm:flex-1">
+                      <input
+                        type="email"
+                        placeholder="Default Reply-To Address (Optional, e.g. hr@makeable.work, team@gmail.com, or support@makeable.nyc)"
+                        value={newKeyReplyTo}
+                        onChange={(e) => setNewKeyReplyTo(e.target.value)}
+                        className="w-full px-3.5 py-2 text-[11px] border border-slate-700 bg-slate-800/80 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 font-mono"
+                        title="Recipient replies will be sent to this email address"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 text-[11px]">
+                      <span className="text-slate-400 text-[10px]">Reply-To Presets:</span>
+                      <button
+                        type="button"
+                        onClick={() => setNewKeyReplyTo('support@makeable.nyc')}
+                        className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold"
+                      >
+                        support@makeable.nyc
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewKeyReplyTo('hr@makeable.work')}
+                        className="px-2 py-1 rounded bg-sky-950/60 hover:bg-sky-900 border border-sky-700/60 text-sky-300 text-[10px] font-semibold"
+                      >
+                        hr@makeable.work
+                      </button>
+                      {newKeyReplyTo && (
+                        <button
+                          type="button"
+                          onClick={() => setNewKeyReplyTo('')}
+                          className="px-2 py-1 rounded bg-rose-950/40 hover:bg-rose-900 border border-rose-800/60 text-rose-300 text-[10px]"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Sender Mail ID Selector & Custom Mail Creator */}
                   <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-700/70 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -778,6 +831,9 @@ print(response.json())`;
                                 Sender Name: {k.customSenderName}
                               </span>
                             )}
+                            <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                              Reply-To: {k.replyTo || (k.allowedSenders?.some(s => /^(hr|careers|talent|hiring|recruiting|people|jobs)@/i.test(s)) ? 'Sender Address (HR)' : 'support@makeable.nyc')}
+                            </span>
                           </div>
                           <p className="text-xs font-mono text-slate-600 font-semibold truncate">{k.key}</p>
                           {k.allowedSenders && k.allowedSenders.length > 0 && (
@@ -814,12 +870,13 @@ print(response.json())`;
                                         : availableSenders.map(s => s.senderEmail)
                                     );
                                     setEditingKeyCustomName(k.customSenderName || '');
+                                    setEditingKeyReplyTo(k.replyTo || '');
                                   }
                                 }}
                                 className="px-3 py-1.5 text-xs font-semibold text-sky-800 bg-sky-100 hover:bg-sky-200 border border-sky-300 rounded-lg transition-colors flex items-center space-x-1"
                               >
                                 <Edit3 className="h-3.5 w-3.5" />
-                                <span>{editingKeyId === k.id ? 'Close' : 'Customize Mails'}</span>
+                                <span>{editingKeyId === k.id ? 'Close' : 'Customize Mails & Reply-To'}</span>
                               </button>
 
                               <button
@@ -880,13 +937,38 @@ print(response.json())`;
                             </div>
                           </div>
 
-                          <input
-                            type="text"
-                            placeholder="Custom Sender Display Name (Optional, e.g. MakeAble HR)"
-                            value={editingKeyCustomName}
-                            onChange={(e) => setEditingKeyCustomName(e.target.value)}
-                            className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-800"
-                          />
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              placeholder="Custom Sender Display Name (Optional, e.g. MakeAble HR)"
+                              value={editingKeyCustomName}
+                              onChange={(e) => setEditingKeyCustomName(e.target.value)}
+                              className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-800"
+                            />
+                            <div className="flex gap-1.5">
+                              <input
+                                type="email"
+                                placeholder="Reply-To Email (e.g. hr@makeable.work or support@makeable.nyc)"
+                                value={editingKeyReplyTo}
+                                onChange={(e) => setEditingKeyReplyTo(e.target.value)}
+                                className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-800 font-mono"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setEditingKeyReplyTo('support@makeable.nyc')}
+                                className="px-2 py-1 text-[10px] rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold shrink-0"
+                              >
+                                support@
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingKeyReplyTo('hr@makeable.work')}
+                                className="px-2 py-1 text-[10px] rounded bg-sky-100 hover:bg-sky-200 text-sky-800 font-semibold shrink-0"
+                              >
+                                hr@
+                              </button>
+                            </div>
+                          </div>
 
                           <div className="max-h-40 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
                             {availableSenders.map(s => {
@@ -1015,6 +1097,47 @@ print(response.json())`;
                       className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Reply-To Address (<code className="text-violet-700">replyTo</code> - Optional)
+                    </label>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setTestReplyTo('support@makeable.nyc')}
+                        className="text-[10px] px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold"
+                      >
+                        support@makeable.nyc
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTestReplyTo(testFromEmail || 'hr@makeable.work')}
+                        className="text-[10px] px-2 py-0.5 rounded bg-sky-100 hover:bg-sky-200 text-sky-800 font-semibold"
+                      >
+                        {testFromEmail ? 'From Address' : 'hr@makeable.work'}
+                      </button>
+                      {testReplyTo && (
+                        <button
+                          type="button"
+                          onClick={() => setTestReplyTo('')}
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-500"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <input
+                    type="email"
+                    placeholder="Leave blank for smart default (HR uses sender address, Outreach uses support@makeable.nyc)"
+                    value={testReplyTo}
+                    onChange={(e) => setTestReplyTo(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500 font-mono"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">HR replies route directly to the HR sender by default, preventing candidate replies from going to customer support.</p>
                 </div>
 
                 <div>

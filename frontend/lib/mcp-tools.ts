@@ -103,13 +103,16 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'send_mail',
     title: 'Send email',
-    description: 'Send one email through the MakeAble sender rotation (45 senders across 9 active domains [excluding .nyc and .info] and 5 prefixes: collab, outreach, aryan, shivam, hello). Suppressed recipients are refused. If no subject is given, a preset subject is used. Counts against the daily limit.',
+    description: 'Send one email through the MakeAble sender rotation (Outreach + HR senders). Suppressed recipients are refused. If no subject is given, a preset subject is used. An optional reply_to email can be specified (e.g. support@makeable.nyc or an HR inbox). Counts against the daily limit.',
     inputSchema: {
       type: 'object',
       properties: {
         to_email: { type: 'string', description: 'Recipient email address.' },
         body: { type: 'string', description: 'Plain-text / light-markdown email body.' },
         subject: { type: 'string', description: 'Optional subject line. Falls back to the preset rotation.' },
+        reply_to: { type: 'string', description: 'Optional Reply-To email address (e.g. support@makeable.nyc, hr@makeable.work, or custom Gmail).' },
+        from_email: { type: 'string', description: 'Optional specific sender email to send from.' },
+        sender_name: { type: 'string', description: 'Optional custom sender display name.' },
         username: { type: 'string', description: 'Optional creator username, used to mark the creator as emailed.' }
       },
       required: ['to_email', 'body'],
@@ -121,6 +124,9 @@ export const TOOLS: ToolDefinition[] = [
       const body = optionalString(args.body, 'body', 20000);
       if (!body) throw new ToolError('"body" is required.');
       const subject = optionalString(args.subject, 'subject', 300);
+      const replyTo = optionalString(args.reply_to || args.replyTo, 'reply_to', 200);
+      const fromEmail = optionalString(args.from_email || args.fromEmail, 'from_email', 200);
+      const senderName = optionalString(args.sender_name || args.senderName, 'sender_name', 200);
       const username = optionalString(args.username, 'username', 200);
 
       const suppression = await getSuppression(toEmail);
@@ -136,7 +142,7 @@ export const TOOLS: ToolDefinition[] = [
 
       return callMailApi(ctx, '/api/v1/send-mail', {
         method: 'POST',
-        body: { toEmail, body, subject, username }
+        body: { toEmail, body, subject, username, replyTo, fromEmail, senderName }
       });
     }
   },

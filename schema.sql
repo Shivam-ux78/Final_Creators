@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS public.api_keys (
     daily_limit INTEGER DEFAULT 500,
     allowed_senders JSONB DEFAULT NULL,
     custom_sender_name TEXT DEFAULT NULL,
+    reply_to TEXT DEFAULT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
     last_used_at TIMESTAMP WITH TIME ZONE,
     last_used_date TEXT,
@@ -91,6 +92,7 @@ CREATE TABLE IF NOT EXISTS public.api_keys (
 -- Migration for existing api_keys tables:
 ALTER TABLE public.api_keys ADD COLUMN IF NOT EXISTS allowed_senders JSONB DEFAULT NULL;
 ALTER TABLE public.api_keys ADD COLUMN IF NOT EXISTS custom_sender_name TEXT DEFAULT NULL;
+ALTER TABLE public.api_keys ADD COLUMN IF NOT EXISTS reply_to TEXT DEFAULT NULL;
 
 -- RLS on with NO policies: the public publishable key can't read or write keys.
 -- The server accesses this table only with SUPABASE_SECRET_KEY (bypasses RLS).

@@ -78,6 +78,7 @@ async function runBackgroundBatch(options: {
   senderMode: string;
   customSenderEmail?: string;
   customSenderName?: string;
+  replyTo?: string;
   rotationInterval?: number; // 5 per domain
   enableIntervalCycles?: boolean;
   burstSize?: number; // e.g. 10 emails (5 from each of 2 domains)
@@ -93,13 +94,14 @@ async function runBackgroundBatch(options: {
     senderMode = 'rotate',
     customSenderEmail,
     customSenderName,
+    replyTo: requestedReplyTo,
     rotationInterval = 5,
     enableIntervalCycles = false,
     burstSize = 10,
     cooldownMinutes = 30
   } = options;
 
-  const replyTo = process.env.REPLY_TO_EMAIL || 'support@makeable.nyc';
+  const defaultReplyTo = requestedReplyTo || process.env.REPLY_TO_EMAIL || 'support@makeable.nyc';
   const openaiApiKey = process.env.OPENAI_API_KEY;
   const accounts = getConfiguredSenders();
 
@@ -398,13 +400,16 @@ https://makeable.nyc`
             </div>
           `;
 
+          const isHr = /^(hr|careers|talent|hiring|recruiting|people|jobs)@/i.test(activeSenderEmail);
+          const effectiveReplyTo = requestedReplyTo || (isHr ? activeSenderEmail : defaultReplyTo);
+
           const resendData = await resendClient.emails.send({
             from: `${activeSenderName} <${activeSenderEmail}>`,
             to: [toEmail],
-            replyTo: replyTo,
-            reply_to: replyTo as any,
+            replyTo: effectiveReplyTo,
+            reply_to: effectiveReplyTo as any,
             headers: {
-              'Reply-To': replyTo
+              'Reply-To': effectiveReplyTo
             },
             subject: subject,
             html: htmlBody,

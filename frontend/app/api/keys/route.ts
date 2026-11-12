@@ -35,15 +35,17 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { name, dailyLimit, allowedSenders, customSenderName } = body;
+    const { name, dailyLimit, allowedSenders, customSenderName, replyTo, reply_to } = body;
 
     const keyName = (name || 'Production API Key').trim();
     const limitNum = typeof dailyLimit === 'number' && dailyLimit > 0 ? dailyLimit : Number(dailyLimit) || 500;
+    const cleanReplyTo = typeof (replyTo || reply_to) === 'string' ? (replyTo || reply_to).trim() : undefined;
     const newKey = await createNewApiKeyAsync(
       keyName,
       limitNum,
       Array.isArray(allowedSenders) ? allowedSenders : undefined,
-      typeof customSenderName === 'string' ? customSenderName : undefined
+      typeof customSenderName === 'string' ? customSenderName : undefined,
+      cleanReplyTo
     );
     const updatedKeys = await getStoredApiKeysAsync();
 
@@ -61,11 +63,11 @@ export async function POST(req: Request) {
   }
 }
 
-// PUT: Update allowed sender mail IDs / custom sender name for an existing API Key
+// PUT: Update allowed sender mail IDs / custom sender name / replyTo for an existing API Key
 export async function PUT(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { id, allowedSenders, customSenderName } = body;
+    const { id, allowedSenders, customSenderName, replyTo, reply_to } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -74,10 +76,15 @@ export async function PUT(req: Request) {
       );
     }
 
+    const cleanReplyTo = (replyTo !== undefined || reply_to !== undefined)
+      ? ((replyTo || reply_to || '').trim() || '')
+      : undefined;
+
     const updated = await updateApiKeySendersAsync(
       id,
       Array.isArray(allowedSenders) ? allowedSenders : undefined,
-      typeof customSenderName === 'string' ? customSenderName : undefined
+      typeof customSenderName === 'string' ? customSenderName : undefined,
+      cleanReplyTo
     );
 
     if (!updated) {

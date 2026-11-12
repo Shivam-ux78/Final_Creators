@@ -47,6 +47,8 @@ export async function POST(req: Request) {
       signature,
       customSenderEmail,
       customSenderName,
+      replyTo,
+      reply_to,
       apiKey: apiKeyInBody,
       resendApiKey: resendKeyInBody,
       dailyLimit: customDailyLimit
@@ -149,7 +151,9 @@ export async function POST(req: Request) {
 
     let messageId = '';
     let methodUsed = '';
-    const replyToEmail = process.env.REPLY_TO_EMAIL || 'support@makeable.nyc';
+    const requestedReplyTo = (replyTo || reply_to || '').trim();
+    const isHr = /^(hr|careers|talent|hiring|recruiting|people|jobs)@/i.test(senderEmail);
+    const replyToEmail = requestedReplyTo || (isHr ? senderEmail : (process.env.REPLY_TO_EMAIL || 'support@makeable.nyc'));
 
     // 1. Try Resend API
     if (resendApiKey && resendApiKey.startsWith('re_')) {
@@ -173,7 +177,7 @@ export async function POST(req: Request) {
       messageId = resendData.data?.id || 'resend-sent';
       methodUsed = `Resend API (${senderEmail})`;
     } 
-    // 2. Try Custom SMTP / Nodemailer
+    // 2. Try Custom SMTP / Nodemailer (Connected Gmail)
     else if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       const transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST || 'smtp.gmail.com',
@@ -188,13 +192,17 @@ export async function POST(req: Request) {
       const info = await transporter.sendMail({
         from: `"${senderName}" <${process.env.SMTP_USER}>`,
         to: toEmail,
+        replyTo: replyToEmail,
+        headers: {
+          'Reply-To': replyToEmail
+        },
         subject: subject,
         text: finalBody,
         html: htmlBody,
       });
 
       messageId = info.messageId;
-      methodUsed = 'Custom Domain SMTP (Nodemailer)';
+      methodUsed = `Custom Domain SMTP via ${process.env.SMTP_USER} (Reply-To: ${replyToEmail})`;
     } 
     // 3. Simulated Demo Mode
     else {
