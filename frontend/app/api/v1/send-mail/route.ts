@@ -8,7 +8,7 @@ import { validateAndRecordKeyUsageAsync } from '../../../../lib/api-keys-storage
 import { verifySessionToken, AUTH_COOKIE_NAME } from '../../../../lib/auth';
 import { getSuppression } from '../../../../lib/suppressions';
 
-import { getConfiguredSenders } from '../../../../lib/senders-config';
+import { getConfiguredSenders, SenderAccount } from '../../../../lib/senders-config';
 
 // Logged-in dashboard users may send and edit presets without an API key
 function hasDashboardSession(): boolean {
@@ -69,36 +69,121 @@ function savePresetSubjects(subjects: string[]): boolean {
   }
 }
 
-// Helper for round robin rotation across all configured accounts
-function getNextRotatedSender() {
+// Helper for round robin rotation across configured (and optionally key-scoped) accounts
+function resolveSenderPool(allowedSenders?: string[]): SenderAccount[] {
   const accounts = getConfiguredSenders();
-  const sendersList = accounts.length > 0 ? accounts : [{
+  const basePool: SenderAccount[] = accounts.length > 0 ? accounts : [{
     id: 'sender_fallback',
     apiKey: process.env.RESEND_API_KEY_2 || process.env.RESEND_API_KEY || '',
     senderName: 'MakeAble Partnerships',
     senderEmail: 'collab@makeable.work',
-    label: 'MakeAble Partnerships (collab@makeable.work)'
+    label: 'MakeAble Partnerships (collab@makeable.work)',
+    category: 'outreach'
   }];
 
-  let lastIndex = -1;
+  if (!allowedSenders || allowedSenders.length === 0) {
+    return basePool;
+  }
+
+  const byEmail = new Map<string, SenderAccount>();
+  for (const acc of basePool) {
+    byEmail.set(acc.senderEmail.toLowerCase(), acc);
+  }
+
+  const fallbackKey = process.env.RESEND_API_KEY_2 || process.env.RESEND_API_KEY || '';
+  const defaultName = process.env.SENDER_NAME || 'MakeAble Partnerships';
+
+  const scoped: SenderAccount[] = [];
+  for (const rawEmail of allowedSenders) {
+    const email = rawEmail.trim().toLowerCase();
+    if (!email) continue;
+    const existing = byEmail.get(email);
+    if (existing) {
+      scoped.push(existing);
+    } else {
+      scoped.push({
+        id: `sender_custom_${email.replace(/[^a-z0-9]/g, '_')}`,
+        apiKey: fallbackKey,
+        senderName: defaultName,
+        senderEmail: email,
+        label: `${defaultName} (${email})`,
+        category: 'custom'
+      });
+    }
+  }
+
+  return scoped.length > 0 ? scoped : basePool;
+}
+
+function getNextRotatedSender(options?: {
+  allowedSenders?: string[];
+  preferredFromEmail?: string;
+  keyId?: string;
+}): {
+  step: number;
+  totalSenders: number;
+  sender: SenderAccount;
+  allSenders: SenderAccount[];
+  error?: string;
+} {
+  const sendersList = resolveSenderPool(options?.allowedSenders);
+  const preferred = (options?.preferredFromEmail || '').trim().toLowerCase();
+
+  if (preferred) {
+    const matchedIdx = sendersList.findIndex(s => s.senderEmail.toLowerCase() === preferred);
+    if (matchedIdx >= 0) {
+      return {
+        step: matchedIdx + 1,
+        totalSenders: sendersList.length,
+        sender: sendersList[matchedIdx],
+        allSenders: sendersList
+      };
+    }
+    if (options?.allowedSenders && options.allowedSenders.length > 0) {
+      return {
+        step: 1,
+        totalSenders: sendersList.length,
+        sender: sendersList[0],
+        allSenders: sendersList,
+        error: `Sender "${preferred}" is not in this API key's allowed mail IDs.`
+      };
+    }
+    // Dashboard or unrestricted key with a custom ad-hoc fromEmail
+    const fallbackKey = process.env.RESEND_API_KEY_2 || process.env.RESEND_API_KEY || '';
+    const customSender: SenderAccount = {
+      id: `sender_custom_${preferred.replace(/[^a-z0-9]/g, '_')}`,
+      apiKey: fallbackKey,
+      senderName: process.env.SENDER_NAME || 'MakeAble Partnerships',
+      senderEmail: preferred,
+      label: preferred,
+      category: 'custom'
+    };
+    return {
+      step: 1,
+      totalSenders: sendersList.length,
+      sender: customSender,
+      allSenders: sendersList
+    };
+  }
+
+  let state: Record<string, any> = {};
   try {
     if (fs.existsSync(ROTATION_FILE)) {
       const raw = fs.readFileSync(ROTATION_FILE, 'utf-8');
-      const parsed = JSON.parse(raw);
-      lastIndex = typeof parsed.lastIndex === 'number' ? parsed.lastIndex : -1;
+      state = JSON.parse(raw) || {};
     }
   } catch (e) {
-    lastIndex = -1;
+    state = {};
   }
 
+  const indexField = options?.keyId ? `lastIndex_${options.keyId}` : 'lastIndex';
+  const lastIndex = typeof state[indexField] === 'number' ? state[indexField] : -1;
   const nextIndex = (lastIndex + 1) % sendersList.length;
 
   try {
-    fs.writeFileSync(
-      ROTATION_FILE,
-      JSON.stringify({ lastIndex: nextIndex, lastUpdatedAt: new Date().toISOString() }, null, 2),
-      'utf-8'
-    );
+    state[indexField] = nextIndex;
+    state.lastUpdatedAt = new Date().toISOString();
+    fs.writeFileSync(ROTATION_FILE, JSON.stringify(state, null, 2), 'utf-8');
   } catch (e) {
     console.warn('Error saving rotation state:', e);
   }
@@ -119,6 +204,18 @@ export async function GET() {
     const presetSubjects = getPresetSubjects();
     const accounts = getConfiguredSenders();
     const rotationOrder = accounts.map(a => a.senderEmail);
+    const availableSenders = accounts.map(a => ({
+      id: a.id,
+      senderEmail: a.senderEmail,
+      senderName: a.senderName,
+      category: a.category
+    }));
+    const senderCounts = {
+      total: accounts.length,
+      outreach: accounts.filter(a => a.category === 'outreach').length,
+      hr: accounts.filter(a => a.category === 'hr').length,
+      custom: accounts.filter(a => a.category === 'custom').length
+    };
 
     let lastIndex = 0;
     try {
@@ -136,6 +233,8 @@ export async function GET() {
       success: true,
       service: 'MakeAble Round-Robin Mail Sender API v1',
       rotationOrder,
+      availableSenders,
+      senderCounts,
       currentNextSender,
       presetSubjects,
       todaySentCount,
@@ -218,12 +317,22 @@ export async function POST(req: Request) {
       subject,
       subjectLine,
       subject_line,
-      username
+      username,
+      fromEmail,
+      from_email,
+      senderEmail,
+      sender_email,
+      senderName,
+      sender_name,
+      fromName,
+      from_name
     } = bodyData;
 
     const recipientEmail = (toEmail || to_email || '').trim();
     const messageBody = (body || message || '').trim();
     const userSubject = (subject || subjectLine || subject_line || '').trim();
+    const requestedFromEmail = (fromEmail || from_email || senderEmail || sender_email || '').trim();
+    const requestedSenderName = (senderName || sender_name || fromName || from_name || '').trim();
 
     if (!recipientEmail || !messageBody) {
       return NextResponse.json(
@@ -298,8 +407,29 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Perform Round Robin Sender Rotation
-    const { step, totalSenders, sender, allSenders } = getNextRotatedSender();
+    // 2. Perform Round Robin Sender Rotation (scoped to API key's allowedSenders if configured)
+    const { step, totalSenders, sender, allSenders, error: senderError } = getNextRotatedSender({
+      allowedSenders: keyValidation.keyItem?.allowedSenders,
+      preferredFromEmail: requestedFromEmail,
+      keyId: keyValidation.keyItem?.id
+    });
+
+    if (senderError) {
+      return NextResponse.json(
+        {
+          success: false,
+          status: 'failed',
+          emailSent: false,
+          error: senderError
+        },
+        { status: 403 }
+      );
+    }
+
+    const effectiveSenderName =
+      requestedSenderName ||
+      keyValidation.keyItem?.customSenderName ||
+      sender.senderName;
 
     // 3. Resolve Subject Line (User-provided subject takes priority; fallback to rotating preset list)
     const presetSubjects = getPresetSubjects();
@@ -358,7 +488,7 @@ export async function POST(req: Request) {
     if (resendApiKey && resendApiKey.startsWith('re_')) {
       const resend = new Resend(resendApiKey);
       const resendData = await resend.emails.send({
-        from: `${sender.senderName} <${sender.senderEmail}>`,
+        from: `${effectiveSenderName} <${sender.senderEmail}>`,
         to: [recipientEmail],
         replyTo: replyToEmail,
         reply_to: replyToEmail as any,

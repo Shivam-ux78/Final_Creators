@@ -3,6 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { X, Code, Send, CheckCircle2, AlertCircle, Copy, Terminal, Server, Key, Zap, Layers, Activity, RefreshCw, Edit3, Plus, Trash2, Save, Lock, ShieldCheck } from 'lucide-react';
 
+interface SenderOption {
+  id: string;
+  senderName: string;
+  senderEmail: string;
+  label?: string;
+  category: 'outreach' | 'hr' | 'custom';
+}
+
 interface ApiMailSenderModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -17,10 +25,28 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
     rotationOrder?: string[];
     currentNextSender?: string;
     presetSubjects?: string[];
+    senderCounts?: { total: number; outreach: number; hr: number; custom: number };
     todaySentCount: number;
     dailyLimit: number;
     remainingQuota: number;
   } | null>(null);
+
+  // Available Senders (Outreach + HR + Custom)
+  const [availableSenders, setAvailableSenders] = useState<SenderOption[]>([]);
+  const [selectedSenderEmails, setSelectedSenderEmails] = useState<string[]>([]);
+  const [senderSearch, setSenderSearch] = useState('');
+  const [newKeyCustomSenderName, setNewKeyCustomSenderName] = useState('');
+
+  // Custom Sender Creation
+  const [customEmailInput, setCustomEmailInput] = useState('');
+  const [customEmailNameInput, setCustomEmailNameInput] = useState('');
+  const [isAddingCustomSender, setIsAddingCustomSender] = useState(false);
+
+  // Edit existing key senders
+  const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
+  const [editingKeySenders, setEditingKeySenders] = useState<string[]>([]);
+  const [editingKeyCustomName, setEditingKeyCustomName] = useState('');
+  const [isSavingKeySenders, setIsSavingKeySenders] = useState(false);
 
   // API Keys state
   const [apiKeysList, setApiKeysList] = useState<Array<{
@@ -28,6 +54,8 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
     name: string;
     key: string;
     dailyLimit: number;
+    allowedSenders?: string[];
+    customSenderName?: string;
     todaySentCount?: number;
     totalSentCount?: number;
     createdAt: string;
@@ -43,6 +71,8 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
   const [toEmail, setToEmail] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('Hello! This is a test message sent via the MakeAble Round-Robin Mail Sender API.');
+  const [testFromEmail, setTestFromEmail] = useState('');
+  const [testSenderName, setTestSenderName] = useState('');
   
   // Preset Subjects Edit State
   const [presetSubjectsList, setPresetSubjectsList] = useState<string[]>([]);
@@ -72,11 +102,22 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
           rotationOrder: dataStats.rotationOrder || ['collab@makeable.work', 'collab@makeable.website', 'collab@makeable.online'],
           currentNextSender: dataStats.currentNextSender || 'collab@makeable.work',
           presetSubjects: subjects,
+          senderCounts: dataStats.senderCounts,
           todaySentCount: dataStats.todaySentCount || 0,
           dailyLimit: dataStats.dailyLimit || 150,
           remainingQuota: dataStats.remainingQuota || 0
         });
         setPresetSubjectsList(subjects);
+      }
+
+      // Fetch Available Senders
+      const resSenders = await fetch('/api/senders');
+      const dataSenders = await resSenders.json();
+      if (dataSenders.success && Array.isArray(dataSenders.senders)) {
+        setAvailableSenders(dataSenders.senders);
+        setSelectedSenderEmails(prev =>
+          prev.length === 0 ? dataSenders.senders.map((s: SenderOption) => s.senderEmail) : prev
+        );
       }
 
       // Fetch API Keys
@@ -98,8 +139,16 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
 
   const handleCreateApiKey = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (selectedSenderEmails.length === 0) {
+      alert('Please select at least one sender mail ID (or click Select All).');
+      return;
+    }
     setIsCreatingKey(true);
     setCreatedKeyNotice(null);
+
+    const allSelected =
+      availableSenders.length > 0 &&
+      selectedSenderEmails.length === availableSenders.length;
 
     try {
       const res = await fetch('/api/keys', {
@@ -107,7 +156,9 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newKeyName.trim() || 'Production API Key',
-          dailyLimit: Number(newKeyDailyLimit) || 500
+          dailyLimit: Number(newKeyDailyLimit) || 500,
+          allowedSenders: allSelected ? undefined : selectedSenderEmails,
+          customSenderName: newKeyCustomSenderName.trim() || undefined
         })
       });
       const data = await res.json();
@@ -115,6 +166,7 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
         setCreatedKeyNotice(`Successfully created key "${data.apiKey.name}" (Limit: ${data.apiKey.dailyLimit}/day): ${data.apiKey.key}`);
         setNewKeyName('');
         setNewKeyDailyLimit('500');
+        setNewKeyCustomSenderName('');
         fetchStatsAndKeys();
       } else {
         alert(data.error || 'Failed to create API key.');
@@ -123,6 +175,83 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
       alert(err.message || 'Error creating API key.');
     } finally {
       setIsCreatingKey(false);
+    }
+  };
+
+  const toggleSenderEmail = (email: string) => {
+    setSelectedSenderEmails(prev =>
+      prev.includes(email) ? prev.filter(e => e !== email) : [...prev, email]
+    );
+  };
+
+  const handleAddCustomSender = async () => {
+    if (!customEmailInput.trim()) return;
+    setIsAddingCustomSender(true);
+    try {
+      const res = await fetch('/api/senders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: customEmailInput.trim(),
+          senderName: customEmailNameInput.trim() || undefined
+        })
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.senders)) {
+        setAvailableSenders(data.senders);
+        if (data.email) {
+          setSelectedSenderEmails(prev =>
+            prev.includes(data.email) ? prev : [...prev, data.email]
+          );
+          if (editingKeyId) {
+            setEditingKeySenders(prev =>
+              prev.includes(data.email) ? prev : [...prev, data.email]
+            );
+          }
+        }
+        setCustomEmailInput('');
+        setCustomEmailNameInput('');
+        fetchStatsAndKeys();
+      } else {
+        alert(data.error || 'Failed to add custom mail.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error adding custom mail.');
+    } finally {
+      setIsAddingCustomSender(false);
+    }
+  };
+
+  const handleSaveExistingKeySenders = async (keyId: string) => {
+    if (editingKeySenders.length === 0) {
+      alert('Please select at least one mail ID.');
+      return;
+    }
+    setIsSavingKeySenders(true);
+    const allSelected =
+      availableSenders.length > 0 &&
+      editingKeySenders.length === availableSenders.length;
+    try {
+      const res = await fetch('/api/keys', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: keyId,
+          allowedSenders: allSelected ? [] : editingKeySenders,
+          customSenderName: editingKeyCustomName.trim() || ''
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEditingKeyId(null);
+        fetchStatsAndKeys();
+      } else {
+        alert(data.error || 'Failed to update key mail IDs.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error updating key mail IDs.');
+    } finally {
+      setIsSavingKeySenders(false);
     }
   };
 
@@ -180,6 +309,12 @@ export default function ApiMailSenderModal({ isOpen, onClose }: ApiMailSenderMod
 
       if (subject.trim()) {
         payload.subject = subject.trim();
+      }
+      if (testFromEmail.trim()) {
+        payload.fromEmail = testFromEmail.trim();
+      }
+      if (testSenderName.trim()) {
+        payload.senderName = testSenderName.trim();
       }
 
       const res = await fetch('/api/v1/send-mail', {
@@ -318,7 +453,7 @@ print(response.json())`;
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Generate API Keys & send emails programmatically. Rotates 45 senders across 9 domains & 5 prefixes (collab, outreach, aryan, shivam, hello).
+                Generate API Keys & send emails programmatically. Rotates {availableSenders.length || 55} senders (45 Outreach + {stats?.senderCounts?.hr ?? 10} HR{(stats?.senderCounts?.custom ?? 0) > 0 ? ` + ${stats?.senderCounts?.custom} Custom` : ''}).
               </p>
             </div>
           </div>
@@ -336,7 +471,7 @@ print(response.json())`;
           <div className="flex items-center space-x-3">
             <span className="text-slate-400 font-bold uppercase tracking-wider text-[11px]">Auto Rotation:</span>
             <span className="px-2.5 py-1 rounded bg-violet-900/50 border border-violet-700/60 text-violet-200 font-mono font-bold text-[11px]">
-              9 Domains × 5 Prefixes (45 Senders • No .nyc / .info)
+              {availableSenders.length || 55} Senders (Outreach + HR + Custom • No .nyc / .info)
             </span>
           </div>
 
@@ -428,36 +563,167 @@ print(response.json())`;
                   Create a secure API key to share with external users or integrate into your third-party applications.
                 </p>
 
-                <form onSubmit={handleCreateApiKey} className="flex flex-col sm:flex-row items-center gap-3">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Key Name (e.g., Client App 1, Marketing Team)"
-                    value={newKeyName}
-                    onChange={(e) => setNewKeyName(e.target.value)}
-                    className="w-full sm:flex-1 px-3.5 py-2 text-xs border border-slate-700 bg-slate-800/80 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400 font-medium"
-                  />
-                  <div className="flex items-center space-x-2 w-full sm:w-auto">
+                <form onSubmit={handleCreateApiKey} className="space-y-4">
+                  <div className="flex flex-col sm:flex-row items-center gap-3">
                     <input
-                      type="number"
+                      type="text"
                       required
-                      min={1}
-                      max={10000}
-                      placeholder="Daily Limit"
-                      value={newKeyDailyLimit}
-                      onChange={(e) => setNewKeyDailyLimit(e.target.value)}
-                      className="w-28 px-3 py-2 text-xs border border-slate-700 bg-slate-800/80 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400 font-bold"
-                      title="Set Daily Sending Limit for this API Key"
+                      placeholder="Key Name (e.g., HR Team Key, Client App 1)"
+                      value={newKeyName}
+                      onChange={(e) => setNewKeyName(e.target.value)}
+                      className="w-full sm:flex-1 px-3.5 py-2 text-xs border border-slate-700 bg-slate-800/80 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400 font-medium"
                     />
-                    <span className="text-[11px] text-slate-400 whitespace-nowrap hidden sm:inline">emails/day</span>
-                    <button
-                      type="submit"
-                      disabled={isCreatingKey}
-                      className="px-4 py-2 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl shadow-sm transition-all flex items-center space-x-1.5 disabled:opacity-50 shrink-0"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>{isCreatingKey ? 'Generating...' : '+ Create API Key'}</span>
-                    </button>
+                    <input
+                      type="text"
+                      placeholder="Custom Sender Name (Optional, e.g. MakeAble HR)"
+                      value={newKeyCustomSenderName}
+                      onChange={(e) => setNewKeyCustomSenderName(e.target.value)}
+                      className="w-full sm:w-56 px-3.5 py-2 text-xs border border-slate-700 bg-slate-800/80 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400 font-medium"
+                      title="Optional display name override for all emails sent with this key"
+                    />
+                    <div className="flex items-center space-x-2 w-full sm:w-auto">
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        max={10000}
+                        placeholder="Daily Limit"
+                        value={newKeyDailyLimit}
+                        onChange={(e) => setNewKeyDailyLimit(e.target.value)}
+                        className="w-24 px-3 py-2 text-xs border border-slate-700 bg-slate-800/80 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400 font-bold"
+                        title="Set Daily Sending Limit for this API Key"
+                      />
+                      <span className="text-[11px] text-slate-400 whitespace-nowrap hidden sm:inline">emails/day</span>
+                      <button
+                        type="submit"
+                        disabled={isCreatingKey}
+                        className="px-4 py-2 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl shadow-sm transition-all flex items-center space-x-1.5 disabled:opacity-50 shrink-0"
+                      >
+                        <Plus className="h-4 w-4" />
+                        <span>{isCreatingKey ? 'Generating...' : '+ Create API Key'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Sender Mail ID Selector & Custom Mail Creator */}
+                  <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-700/70 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs font-bold text-slate-200">
+                          Select Sender Mail IDs ({selectedSenderEmails.length} / {availableSenders.length} selected)
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSenderEmails(availableSenders.map(s => s.senderEmail))}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/30 text-emerald-200 text-[11px] font-semibold"
+                        >
+                          Select All ({availableSenders.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSenderEmails([])}
+                          className="px-2.5 py-1 rounded-lg bg-slate-700/70 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold"
+                        >
+                          Deselect All
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSenderEmails(availableSenders.filter(s => s.category === 'hr').map(s => s.senderEmail))}
+                          className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/30 text-sky-200 text-[11px] font-semibold"
+                        >
+                          HR Only ({availableSenders.filter(s => s.category === 'hr').length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSenderEmails(availableSenders.filter(s => s.category === 'outreach').map(s => s.senderEmail))}
+                          className="px-2.5 py-1 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 border border-violet-400/30 text-violet-200 text-[11px] font-semibold"
+                        >
+                          Outreach Only ({availableSenders.filter(s => s.category === 'outreach').length})
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Custom Mail Creator + Filter */}
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        placeholder="Search mail IDs (e.g. hr, careers, makeable.work)..."
+                        value={senderSearch}
+                        onChange={(e) => setSenderSearch(e.target.value)}
+                        className="sm:w-56 px-3 py-1.5 text-[11px] border border-slate-700 bg-slate-800 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                      />
+                      <div className="flex flex-1 gap-1.5">
+                        <input
+                          type="email"
+                          placeholder="Custom mail ID (e.g. hr-team@makeable.work)"
+                          value={customEmailInput}
+                          onChange={(e) => setCustomEmailInput(e.target.value)}
+                          className="flex-1 px-3 py-1.5 text-[11px] border border-slate-700 bg-slate-800 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Display Name (optional)"
+                          value={customEmailNameInput}
+                          onChange={(e) => setCustomEmailNameInput(e.target.value)}
+                          className="w-36 px-2.5 py-1.5 text-[11px] border border-slate-700 bg-slate-800 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-400 hidden md:block"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddCustomSender}
+                          disabled={isAddingCustomSender || !customEmailInput.trim()}
+                          className="px-3 py-1.5 rounded-lg bg-violet-500 hover:bg-violet-400 text-white text-[11px] font-bold disabled:opacity-50 shrink-0 flex items-center space-x-1"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          <span>{isAddingCustomSender ? 'Adding...' : 'Custom Create'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Checkbox Grid */}
+                    <div className="max-h-44 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 pr-1">
+                      {availableSenders
+                        .filter(s =>
+                          !senderSearch.trim() ||
+                          s.senderEmail.toLowerCase().includes(senderSearch.toLowerCase()) ||
+                          s.category.toLowerCase().includes(senderSearch.toLowerCase())
+                        )
+                        .map(s => {
+                          const checked = selectedSenderEmails.includes(s.senderEmail);
+                          return (
+                            <label
+                              key={s.senderEmail}
+                              className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-[11px] cursor-pointer transition-colors ${
+                                checked
+                                  ? 'bg-violet-600/30 border-violet-400/60 text-white'
+                                  : 'bg-slate-800/60 border-slate-700/60 text-slate-300 hover:bg-slate-800'
+                              }`}
+                            >
+                              <div className="flex items-center space-x-2 truncate">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleSenderEmail(s.senderEmail)}
+                                  className="rounded border-slate-500 text-violet-500 focus:ring-0"
+                                />
+                                <span className="font-mono truncate">{s.senderEmail}</span>
+                              </div>
+                              <span
+                                className={`ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase shrink-0 ${
+                                  s.category === 'hr'
+                                    ? 'bg-sky-500/20 text-sky-300'
+                                    : s.category === 'custom'
+                                    ? 'bg-amber-500/20 text-amber-300'
+                                    : 'bg-slate-700 text-slate-300'
+                                }`}
+                              >
+                                {s.category}
+                              </span>
+                            </label>
+                          );
+                        })}
+                    </div>
                   </div>
                 </form>
 
@@ -484,59 +750,199 @@ print(response.json())`;
                   {apiKeysList.map((k) => (
                     <div
                       key={k.id}
-                      className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                      className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-3"
                     >
-                      <div className="space-y-1 truncate">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-xs font-bold text-slate-900">{k.name}</span>
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              k.status === 'active'
-                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                : 'bg-rose-100 text-rose-800 border border-rose-200'
-                            }`}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="space-y-1 truncate">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-bold text-slate-900">{k.name}</span>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                k.status === 'active'
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : 'bg-rose-100 text-rose-800 border border-rose-200'
+                              }`}
+                            >
+                              {k.status.toUpperCase()}
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold">
+                              Limit: {k.dailyLimit || 100} / day
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-sky-100 text-sky-800 text-[10px] font-bold">
+                              {k.allowedSenders && k.allowedSenders.length > 0
+                                ? `${k.allowedSenders.length} Mail ID${k.allowedSenders.length === 1 ? '' : 's'} Linked`
+                                : `All ${availableSenders.length || 55} Mails`}
+                            </span>
+                            {k.customSenderName && (
+                              <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">
+                                Sender Name: {k.customSenderName}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs font-mono text-slate-600 font-semibold truncate">{k.key}</p>
+                          {k.allowedSenders && k.allowedSenders.length > 0 && (
+                            <p className="text-[11px] font-mono text-slate-500 truncate">
+                              Mails: {k.allowedSenders.slice(0, 4).join(', ')}
+                              {k.allowedSenders.length > 4 ? ` +${k.allowedSenders.length - 4} more` : ''}
+                            </p>
+                          )}
+                          <div className="flex items-center space-x-4 text-[11px] text-slate-400">
+                            <span>Created: {new Date(k.createdAt).toLocaleDateString()}</span>
+                            <span>Today Sent: <strong className="text-slate-700 font-semibold">{k.todaySentCount || 0} / {k.dailyLimit || 100}</strong></span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => copyToClipboard(k.key, k.id)}
+                            className="px-3 py-1.5 text-xs font-semibold text-violet-700 bg-violet-100 hover:bg-violet-200 rounded-lg transition-colors flex items-center space-x-1"
                           >
-                            {k.status.toUpperCase()}
-                          </span>
-                          <span className="px-2 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold">
-                            Limit: {k.dailyLimit || 100} / day
-                          </span>
-                        </div>
-                        <p className="text-xs font-mono text-slate-600 font-semibold truncate">{k.key}</p>
-                        <div className="flex items-center space-x-4 text-[11px] text-slate-400">
-                          <span>Created: {new Date(k.createdAt).toLocaleDateString()}</span>
-                          <span>Today Sent: <strong className="text-slate-700 font-semibold">{k.todaySentCount || 0} / {k.dailyLimit || 100}</strong></span>
+                            <Copy className="h-3.5 w-3.5" />
+                            <span>{copiedCode === k.id ? 'Copied!' : 'Copy'}</span>
+                          </button>
+                          {k.status === 'active' && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  if (editingKeyId === k.id) {
+                                    setEditingKeyId(null);
+                                  } else {
+                                    setEditingKeyId(k.id);
+                                    setEditingKeySenders(
+                                      k.allowedSenders && k.allowedSenders.length > 0
+                                        ? k.allowedSenders
+                                        : availableSenders.map(s => s.senderEmail)
+                                    );
+                                    setEditingKeyCustomName(k.customSenderName || '');
+                                  }
+                                }}
+                                className="px-3 py-1.5 text-xs font-semibold text-sky-800 bg-sky-100 hover:bg-sky-200 border border-sky-300 rounded-lg transition-colors flex items-center space-x-1"
+                              >
+                                <Edit3 className="h-3.5 w-3.5" />
+                                <span>{editingKeyId === k.id ? 'Close' : 'Customize Mails'}</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleRotateKey(k.id)}
+                                className="px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-lg transition-colors flex items-center space-x-1"
+                                title="Generate a new key string & invalidate old key"
+                              >
+                                <RefreshCw className="h-3.5 w-3.5 text-emerald-700" />
+                                <span>Rotate</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleRevokeKey(k.id)}
+                                className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors"
+                              >
+                                Revoke
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
 
-                      <div className="flex items-center space-x-2 shrink-0">
-                        <button
-                          onClick={() => copyToClipboard(k.key, k.id)}
-                          className="px-3 py-1.5 text-xs font-semibold text-violet-700 bg-violet-100 hover:bg-violet-200 rounded-lg transition-colors flex items-center space-x-1"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                          <span>{copiedCode === k.id ? 'Copied!' : 'Copy'}</span>
-                        </button>
-                        {k.status === 'active' && (
-                          <>
-                            <button
-                              onClick={() => handleRotateKey(k.id)}
-                              className="px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-lg transition-colors flex items-center space-x-1"
-                              title="Generate a new key string & invalidate old key"
-                            >
-                              <RefreshCw className="h-3.5 w-3.5 text-emerald-700" />
-                              <span>Rotate</span>
-                            </button>
+                      {editingKeyId === k.id && (
+                        <div className="pt-3 border-t border-slate-200 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-slate-700">
+                              Customize Linked Mail IDs ({editingKeySenders.length} / {availableSenders.length} selected)
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setEditingKeySenders(availableSenders.map(s => s.senderEmail))}
+                                className="px-2 py-1 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[11px] font-semibold"
+                              >
+                                Select All
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingKeySenders([])}
+                                className="px-2 py-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 text-[11px] font-semibold"
+                              >
+                                Deselect All
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingKeySenders(availableSenders.filter(s => s.category === 'hr').map(s => s.senderEmail))}
+                                className="px-2 py-1 rounded bg-sky-100 hover:bg-sky-200 text-sky-800 text-[11px] font-semibold"
+                              >
+                                HR Only
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingKeySenders(availableSenders.filter(s => s.category === 'outreach').map(s => s.senderEmail))}
+                                className="px-2 py-1 rounded bg-violet-100 hover:bg-violet-200 text-violet-800 text-[11px] font-semibold"
+                              >
+                                Outreach Only
+                              </button>
+                            </div>
+                          </div>
 
+                          <input
+                            type="text"
+                            placeholder="Custom Sender Display Name (Optional, e.g. MakeAble HR)"
+                            value={editingKeyCustomName}
+                            onChange={(e) => setEditingKeyCustomName(e.target.value)}
+                            className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-800"
+                          />
+
+                          <div className="max-h-40 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                            {availableSenders.map(s => {
+                              const checked = editingKeySenders.includes(s.senderEmail);
+                              return (
+                                <label
+                                  key={s.senderEmail}
+                                  className={`flex items-center justify-between px-2.5 py-1 rounded-lg border text-[11px] cursor-pointer ${
+                                    checked
+                                      ? 'bg-violet-50 border-violet-300 text-violet-950'
+                                      : 'bg-white border-slate-200 text-slate-600'
+                                  }`}
+                                >
+                                  <div className="flex items-center space-x-2 truncate">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() =>
+                                        setEditingKeySenders(prev =>
+                                          prev.includes(s.senderEmail)
+                                            ? prev.filter(e => e !== s.senderEmail)
+                                            : [...prev, s.senderEmail]
+                                        )
+                                      }
+                                      className="rounded border-slate-300 text-violet-600"
+                                    />
+                                    <span className="font-mono truncate">{s.senderEmail}</span>
+                                  </div>
+                                  <span className="ml-1 text-[9px] font-bold uppercase text-slate-400 shrink-0">
+                                    {s.category}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+
+                          <div className="flex justify-end gap-2">
                             <button
-                              onClick={() => handleRevokeKey(k.id)}
-                              className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors"
+                              type="button"
+                              onClick={() => setEditingKeyId(null)}
+                              className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-100"
                             >
-                              Revoke
+                              Cancel
                             </button>
-                          </>
-                        )}
-                      </div>
+                            <button
+                              type="button"
+                              disabled={isSavingKeySenders}
+                              onClick={() => handleSaveExistingKeySenders(k.id)}
+                              className="px-4 py-1.5 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-lg disabled:opacity-50 flex items-center space-x-1"
+                            >
+                              <Save className="h-3.5 w-3.5" />
+                              <span>{isSavingKeySenders ? 'Saving...' : 'Save Mail Selection'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -577,6 +983,38 @@ print(response.json())`;
                     className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
                   />
                   <p className="text-[11px] text-slate-400 mt-1">If blank, rotates automatically from your configured preset subject list.</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      From Mail ID (<code className="text-violet-700">fromEmail</code> - Optional)
+                    </label>
+                    <select
+                      value={testFromEmail}
+                      onChange={(e) => setTestFromEmail(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-violet-500"
+                    >
+                      <option value="">Auto-Rotate (Round Robin)</option>
+                      {availableSenders.map(s => (
+                        <option key={s.senderEmail} value={s.senderEmail}>
+                          [{s.category.toUpperCase()}] {s.senderEmail}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Custom Sender Name (<code className="text-violet-700">senderName</code> - Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. MakeAble HR"
+                      value={testSenderName}
+                      onChange={(e) => setTestSenderName(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500"
+                    />
+                  </div>
                 </div>
 
                 <div>

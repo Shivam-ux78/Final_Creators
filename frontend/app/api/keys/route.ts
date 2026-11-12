@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   getStoredApiKeysAsync,
   createNewApiKeyAsync,
+  updateApiKeySendersAsync,
   revokeApiKeyAsync,
   rotateApiKeyAsync
 } from '../../../lib/api-keys-storage';
@@ -34,11 +35,16 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { name, dailyLimit } = body;
+    const { name, dailyLimit, allowedSenders, customSenderName } = body;
 
     const keyName = (name || 'Production API Key').trim();
     const limitNum = typeof dailyLimit === 'number' && dailyLimit > 0 ? dailyLimit : Number(dailyLimit) || 500;
-    const newKey = await createNewApiKeyAsync(keyName, limitNum);
+    const newKey = await createNewApiKeyAsync(
+      keyName,
+      limitNum,
+      Array.isArray(allowedSenders) ? allowedSenders : undefined,
+      typeof customSenderName === 'string' ? customSenderName : undefined
+    );
     const updatedKeys = await getStoredApiKeysAsync();
 
     return NextResponse.json({
@@ -50,6 +56,47 @@ export async function POST(req: Request) {
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message || 'Failed to create API key' },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT: Update allowed sender mail IDs / custom sender name for an existing API Key
+export async function PUT(req: Request) {
+  try {
+    const body = await req.json().catch(() => ({}));
+    const { id, allowedSenders, customSenderName } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'API Key ID is required.' },
+        { status: 400 }
+      );
+    }
+
+    const updated = await updateApiKeySendersAsync(
+      id,
+      Array.isArray(allowedSenders) ? allowedSenders : undefined,
+      typeof customSenderName === 'string' ? customSenderName : undefined
+    );
+
+    if (!updated) {
+      return NextResponse.json(
+        { success: false, error: `API Key with ID "${id}" not found.` },
+        { status: 404 }
+      );
+    }
+
+    const updatedKeys = await getStoredApiKeysAsync();
+    return NextResponse.json({
+      success: true,
+      message: `Sender configuration updated for "${updated.name}".`,
+      apiKey: updated,
+      keys: updatedKeys
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to update API key senders' },
       { status: 500 }
     );
   }

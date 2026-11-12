@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { getSupabaseAdmin } from './supabase-admin';
 
 // API keys live only in the Supabase `api_keys` table, accessed with the server-only
@@ -10,6 +12,8 @@ export interface ApiKeyItem {
   name: string;
   key: string;
   dailyLimit: number;
+  allowedSenders?: string[];
+  customSenderName?: string;
   createdAt: string;
   lastUsedAt?: string;
   lastUsedDate?: string; // YYYY-MM-DD for tracking today's limit reset
@@ -19,6 +23,43 @@ export interface ApiKeyItem {
 }
 
 const TABLE = 'api_keys';
+const KEY_SENDERS_FALLBACK_FILE = path.join(process.cwd(), '.api_key_senders.json');
+
+type KeySenderPrefs = {
+  allowedSenders?: string[];
+  customSenderName?: string;
+};
+
+function readKeySenderPrefsMap(): Record<string, KeySenderPrefs> {
+  try {
+    if (fs.existsSync(KEY_SENDERS_FALLBACK_FILE)) {
+      const raw = fs.readFileSync(KEY_SENDERS_FALLBACK_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch (e) {
+    console.warn('Error reading .api_key_senders.json:', e);
+  }
+  return {};
+}
+
+function writeKeySenderPrefs(id: string, prefs: KeySenderPrefs): void {
+  try {
+    const map = readKeySenderPrefsMap();
+    map[id] = prefs;
+    fs.writeFileSync(KEY_SENDERS_FALLBACK_FILE, JSON.stringify(map, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('Error writing .api_key_senders.json:', e);
+  }
+}
+
+function normalizeAllowedSenders(val: any): string[] | undefined {
+  if (!Array.isArray(val)) return undefined;
+  const cleaned = val
+    .filter((s: any) => typeof s === 'string' && s.trim().includes('@'))
+    .map((s: string) => s.trim().toLowerCase());
+  return cleaned.length > 0 ? Array.from(new Set(cleaned)) : undefined;
+}
 
 function todayString(): string {
   return new Date().toISOString().split('T')[0];
@@ -28,13 +69,21 @@ function generateKey(): string {
   return 'mk_live_' + crypto.randomBytes(16).toString('hex');
 }
 
-function fromRow(k: any): ApiKeyItem {
+function fromRow(k: any, prefsMap?: Record<string, KeySenderPrefs>): ApiKeyItem {
   const todayStr = todayString();
+  const fallbackPrefs = prefsMap ? prefsMap[k.id] : readKeySenderPrefsMap()[k.id];
+  const allowedSenders = normalizeAllowedSenders(k.allowed_senders) ?? normalizeAllowedSenders(fallbackPrefs?.allowedSenders);
+  const customSenderName =
+    (typeof k.custom_sender_name === 'string' && k.custom_sender_name.trim() ? k.custom_sender_name.trim() : undefined) ??
+    (fallbackPrefs?.customSenderName?.trim() || undefined);
+
   return {
     id: k.id,
     name: k.name || 'API Key',
     key: k.key,
     dailyLimit: typeof k.daily_limit === 'number' && k.daily_limit > 0 ? k.daily_limit : 500,
+    allowedSenders,
+    customSenderName,
     createdAt: k.created_at || new Date().toISOString(),
     lastUsedAt: k.last_used_at || undefined,
     lastUsedDate: k.last_used_date || undefined,
@@ -51,7 +100,8 @@ export async function getStoredApiKeysAsync(): Promise<ApiKeyItem[]> {
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(`Failed to load API keys: ${error.message}`);
-  return (data || []).map(fromRow);
+  const prefsMap = readKeySenderPrefsMap();
+  return (data || []).map(row => fromRow(row, prefsMap));
 }
 
 async function findKeyByValue(keyString: string): Promise<ApiKeyItem | null> {
@@ -65,27 +115,91 @@ async function findKeyByValue(keyString: string): Promise<ApiKeyItem | null> {
   return data ? fromRow(data) : null;
 }
 
-export async function createNewApiKeyAsync(name: string, dailyLimit?: number): Promise<ApiKeyItem> {
+export async function createNewApiKeyAsync(
+  name: string,
+  dailyLimit?: number,
+  allowedSenders?: string[],
+  customSenderName?: string
+): Promise<ApiKeyItem> {
   const limit = typeof dailyLimit === 'number' && dailyLimit > 0 ? dailyLimit : 500;
+  const cleanSenders = normalizeAllowedSenders(allowedSenders);
+  const cleanCustomName = customSenderName?.trim() || undefined;
+  const keyId = 'key_' + Date.now();
 
-  const { data, error } = await getSupabaseAdmin()
+  const basePayload: Record<string, any> = {
+    id: keyId,
+    name: name.trim() || 'Custom API Key',
+    key: generateKey(),
+    daily_limit: limit,
+    created_at: new Date().toISOString(),
+    last_used_date: todayString(),
+    today_sent_count: 0,
+    total_sent_count: 0,
+    status: 'active'
+  };
+
+  if (cleanSenders || cleanCustomName) {
+    writeKeySenderPrefs(keyId, {
+      allowedSenders: cleanSenders,
+      customSenderName: cleanCustomName
+    });
+  }
+
+  let { data, error } = await getSupabaseAdmin()
     .from(TABLE)
     .insert({
-      id: 'key_' + Date.now(),
-      name: name.trim() || 'Custom API Key',
-      key: generateKey(),
-      daily_limit: limit,
-      created_at: new Date().toISOString(),
-      last_used_date: todayString(),
-      today_sent_count: 0,
-      total_sent_count: 0,
-      status: 'active'
+      ...basePayload,
+      allowed_senders: cleanSenders ?? null,
+      custom_sender_name: cleanCustomName ?? null
     })
     .select('*')
     .single();
 
+  if (error && /allowed_senders|custom_sender_name|schema cache|column/i.test(error.message)) {
+    const retry = await getSupabaseAdmin()
+      .from(TABLE)
+      .insert(basePayload)
+      .select('*')
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
   if (error) throw new Error(`Failed to create API key: ${error.message}`);
   return fromRow(data);
+}
+
+export async function updateApiKeySendersAsync(
+  id: string,
+  allowedSenders?: string[],
+  customSenderName?: string
+): Promise<ApiKeyItem | null> {
+  const cleanSenders = normalizeAllowedSenders(allowedSenders);
+  const cleanCustomName = customSenderName?.trim() || undefined;
+
+  writeKeySenderPrefs(id, {
+    allowedSenders: cleanSenders,
+    customSenderName: cleanCustomName
+  });
+
+  const { data, error } = await getSupabaseAdmin()
+    .from(TABLE)
+    .update({
+      allowed_senders: cleanSenders ?? null,
+      custom_sender_name: cleanCustomName ?? null
+    })
+    .eq('id', id)
+    .select('*')
+    .maybeSingle();
+
+  if (error && /allowed_senders|custom_sender_name|schema cache|column/i.test(error.message)) {
+    const existing = await getSupabaseAdmin().from(TABLE).select('*').eq('id', id).maybeSingle();
+    if (existing.error) throw new Error(`Failed to update API key senders: ${existing.error.message}`);
+    return existing.data ? fromRow(existing.data) : null;
+  }
+
+  if (error) throw new Error(`Failed to update API key senders: ${error.message}`);
+  return data ? fromRow(data) : null;
 }
 
 // Dedicated key used internally by the MCP connector (/api/mcp). Auto-created on first
