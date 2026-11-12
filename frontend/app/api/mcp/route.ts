@@ -52,9 +52,9 @@ async function handleMessage(msg: JsonRpcMessage, ctx: ToolContext) {
       const requested = msg.params?.protocolVersion;
       return rpcResult(msg.id, {
         protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : SUPPORTED_PROTOCOL_VERSIONS[0],
-        capabilities: { tools: { listChanged: false } },
+        capabilities: { tools: { listChanged: true } },
         serverInfo: SERVER_INFO,
-        instructions: 'Send creator outreach email via MakeAble. Call get_limit before bulk sends, and check get_status(email) or the suppression list before emailing someone. Never retry a send_mail that returned an error about suppression or daily limits.'
+        instructions: 'Send creator outreach or HR recruitment email via MakeAble. Call get_limit before bulk sends. The send_mail tool supports an optional "reply_to" parameter (e.g. "support@makeable.nyc" or an HR inbox) so replies reach the desired address. Check get_status(email) or the suppression list before emailing someone. Never retry a send_mail that returned an error about suppression or daily limits.'
       });
     }
 

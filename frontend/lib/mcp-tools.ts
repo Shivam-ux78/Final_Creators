@@ -111,6 +111,7 @@ export const TOOLS: ToolDefinition[] = [
         body: { type: 'string', description: 'Plain-text / light-markdown email body.' },
         subject: { type: 'string', description: 'Optional subject line. Falls back to the preset rotation.' },
         reply_to: { type: 'string', description: 'Optional Reply-To email address (e.g. support@makeable.nyc, hr@makeable.work, or custom Gmail).' },
+        replyTo: { type: 'string', description: 'Optional Reply-To email address (alias for reply_to).' },
         from_email: { type: 'string', description: 'Optional specific sender email to send from.' },
         sender_name: { type: 'string', description: 'Optional custom sender display name.' },
         username: { type: 'string', description: 'Optional creator username, used to mark the creator as emailed.' }

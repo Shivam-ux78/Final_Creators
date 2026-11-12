@@ -350,6 +350,7 @@ export async function POST(req: Request) {
           examplePayload: {
             toEmail: 'creator@example.com',
             subject: 'Custom Subject Line Here (Optional)',
+            replyTo: 'support@makeable.nyc (or hr@makeable.work - Optional)',
             body: 'Hi, we would love to collaborate with you!'
           }
         },
