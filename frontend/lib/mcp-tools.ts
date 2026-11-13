@@ -54,7 +54,8 @@ async function callMailApi(ctx: ToolContext, path: string, init: { method: 'GET'
 
   const res = await fetch(`${ctx.apiBase}${path}`, {
     method: init.method,
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+    // Tag every call with the MCP user so sends on the shared key can be attributed later
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'x-mail-source': mcpSource(ctx) },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
     cache: 'no-store'
   });
@@ -64,6 +65,10 @@ async function callMailApi(ctx: ToolContext, path: string, init: { method: 'GET'
     throw new ToolError(data.error || `Mail API returned HTTP ${res.status}.`, { httpStatus: res.status, ...data });
   }
   return data;
+}
+
+function mcpSource(ctx: ToolContext): string {
+  return `mcp:${ctx.user}`.slice(0, 120);
 }
 
 async function getRecipientStatus(email: string) {
@@ -95,7 +100,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_limit',
     title: 'Get sending limit',
-    description: 'Get the daily email limit, how many emails have been sent today, and the remaining quota for the connector\'s API key.',
+    description: 'Get the daily email limit, how many emails have been sent today, and the remaining quota for the connector\'s API key. The "MCP Connector" key is shared by every MCP session, so todaySentCount is an aggregate; use list_sent to see which messages make up that count (mine=true for your own).',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: false },
     handler: async (_args, ctx) => callMailApi(ctx, '/api/v1/limit', { method: 'GET' })
@@ -194,6 +199,41 @@ export const TOOLS: ToolDefinition[] = [
         deliveryStatus: liveDeliveryStatus,
         recipient: recipientInfo
       };
+    }
+  },
+  {
+    name: 'list_sent',
+    title: 'List sent emails',
+    description: 'Itemised log of emails sent on the shared "MCP Connector" key for one UTC day (default today), with counts by source, sender, category (hr/outreach/custom) and delivery status. Use mine=true for only emails sent by the current MCP user, category="hr" for HR TEAM sends. Bodies are not returned.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        date: { type: 'string', description: 'UTC day as YYYY-MM-DD. Defaults to today.' },
+        mine: { type: 'boolean', description: 'Only emails sent by the current MCP user.' },
+        category: { type: 'string', enum: ['hr', 'outreach', 'custom'], description: 'Only this sender category.' },
+        sender: { type: 'string', description: 'Only this sender address, e.g. hr@makeable.work.' },
+        limit: { type: 'integer', minimum: 1, maximum: 500, description: 'Max messages listed (default 100). Counts always cover the whole day.' }
+      },
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    handler: async (args, ctx) => {
+      const params = new URLSearchParams();
+      const date = optionalString(args.date, 'date', 10);
+      if (date) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new ToolError('"date" must be YYYY-MM-DD.');
+        params.set('date', date);
+      }
+      if (args.mine === true) params.set('source', mcpSource(ctx));
+      const category = optionalString(args.category, 'category', 20);
+      if (category) {
+        if (!['hr', 'outreach', 'custom'].includes(category)) throw new ToolError('"category" must be hr, outreach or custom.');
+        params.set('category', category);
+      }
+      if (args.sender) params.set('sender', requireEmail(args.sender, 'sender'));
+      if (Number.isInteger(args.limit)) params.set('limit', String(Math.min(Math.max(args.limit, 1), 500)));
+      const qs = params.toString();
+      return callMailApi(ctx, `/api/v1/send-mail/log${qs ? `?${qs}` : ''}`, { method: 'GET' });
     }
   },
   {

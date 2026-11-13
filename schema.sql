@@ -140,6 +140,15 @@ CREATE INDEX IF NOT EXISTS idx_email_logs_recipient ON public.email_logs(recipie
 CREATE INDEX IF NOT EXISTS idx_email_logs_message_id ON public.email_logs(message_id);
 CREATE INDEX IF NOT EXISTS idx_email_logs_status ON public.email_logs(status);
 
+-- Attribution: which API key / caller sent each email (breaks down a shared key's daily count)
+ALTER TABLE public.email_logs ADD COLUMN IF NOT EXISTS api_key_id TEXT;
+ALTER TABLE public.email_logs ADD COLUMN IF NOT EXISTS api_key_name TEXT;
+ALTER TABLE public.email_logs ADD COLUMN IF NOT EXISTS source TEXT;          -- 'api', 'dashboard', 'mcp:<user>'
+ALTER TABLE public.email_logs ADD COLUMN IF NOT EXISTS reply_to TEXT;
+ALTER TABLE public.email_logs ADD COLUMN IF NOT EXISTS sender_category TEXT; -- 'outreach', 'hr', 'custom'
+CREATE INDEX IF NOT EXISTS idx_email_logs_sent_at ON public.email_logs(sent_at);
+CREATE INDEX IF NOT EXISTS idx_email_logs_api_key ON public.email_logs(api_key_id, sent_at);
+
 ALTER TABLE public.email_logs ENABLE ROW LEVEL SECURITY;
 
 -- Server-only (SUPABASE_SECRET_KEY): holds every email body, so no public access

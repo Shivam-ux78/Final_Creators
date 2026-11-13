@@ -287,6 +287,52 @@ export async function isActiveApiKeyAsync(keyString: string | null | undefined):
 }
 
 // Validate Key and Enforce Per-Key Daily Limit
+// Check a key without consuming quota. Pair with recordKeyUsageAsync after a successful send,
+// so refused/failed sends (suppressed, sender error, provider error) never count against the key.
+export async function validateApiKeyAsync(keyString: string): Promise<{
+  valid: boolean;
+  error?: string;
+  keyItem?: ApiKeyItem;
+}> {
+  if (!keyString || !keyString.trim()) {
+    return { valid: false, error: 'An API Key is required. Provide it via the x-api-key header.' };
+  }
+
+  const keyItem = await findKeyByValue(keyString.trim());
+  if (!keyItem) return { valid: false, error: 'Invalid API Key provided.' };
+  if (keyItem.status === 'revoked') return { valid: false, error: 'This API Key has been revoked.' };
+  if (keyItem.todaySentCount >= keyItem.dailyLimit) {
+    return {
+      valid: false,
+      error: `Daily limit of ${keyItem.dailyLimit} emails for API key "${keyItem.name}" has been reached for today.`,
+      keyItem
+    };
+  }
+  return { valid: true, keyItem };
+}
+
+// Count one successful send against a key. Re-reads the row first to narrow lost-update races.
+export async function recordKeyUsageAsync(keyItem: ApiKeyItem): Promise<ApiKeyItem> {
+  const fresh = (await findKeyByValue(keyItem.key)) || keyItem;
+  fresh.todaySentCount += 1;
+  fresh.totalSentCount += 1;
+  fresh.lastUsedAt = new Date().toISOString();
+  fresh.lastUsedDate = todayString();
+
+  const { error } = await getSupabaseAdmin()
+    .from(TABLE)
+    .update({
+      today_sent_count: fresh.todaySentCount,
+      total_sent_count: fresh.totalSentCount,
+      last_used_at: fresh.lastUsedAt,
+      last_used_date: fresh.lastUsedDate
+    })
+    .eq('id', fresh.id);
+
+  if (error) throw new Error(`Failed to record API key usage: ${error.message}`);
+  return fresh;
+}
+
 export async function validateAndRecordKeyUsageAsync(keyString: string): Promise<{
   valid: boolean;
   error?: string;

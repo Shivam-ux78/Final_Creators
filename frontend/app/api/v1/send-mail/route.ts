@@ -4,7 +4,7 @@ import { Resend } from 'resend';
 import fs from 'fs';
 import path from 'path';
 import { recordEmailSent, getTodaySentCountFromSupabase, getDailyLimitInfo } from '../../../../lib/creators-storage';
-import { validateAndRecordKeyUsageAsync } from '../../../../lib/api-keys-storage';
+import { validateApiKeyAsync, recordKeyUsageAsync } from '../../../../lib/api-keys-storage';
 import { verifySessionToken, AUTH_COOKIE_NAME } from '../../../../lib/auth';
 import { getSuppression } from '../../../../lib/suppressions';
 
@@ -233,6 +233,11 @@ export async function GET() {
       success: true,
       service: 'MakeAble Round-Robin Mail Sender API v1',
       defaultReplyTo: process.env.REPLY_TO_EMAIL || 'support@makeable.nyc',
+      replyToRules: {
+        outreachSenders: process.env.REPLY_TO_EMAIL || 'support@makeable.nyc',
+        hrSenders: "the HR sender's own address (so candidate replies reach HR)",
+        override: 'pass replyTo per request, or set a Reply-To on the API key'
+      },
       rotationOrder,
       availableSenders,
       senderCounts,
@@ -363,9 +368,11 @@ export async function POST(req: Request) {
     const xApiKeyHeader = req.headers.get('x-api-key');
     const providedApiKey = xApiKeyHeader || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : '') || bodyData.apiKey;
 
-    const keyValidation = providedApiKey || !hasDashboardSession()
-      ? await validateAndRecordKeyUsageAsync(providedApiKey)
-      : { valid: true } as Awaited<ReturnType<typeof validateAndRecordKeyUsageAsync>>;
+    // Validate only; quota is consumed after the email is actually sent (step 6)
+    const isDashboardSend = !providedApiKey && hasDashboardSession();
+    const keyValidation = isDashboardSend
+      ? { valid: true } as Awaited<ReturnType<typeof validateApiKeyAsync>>
+      : await validateApiKeyAsync(providedApiKey);
     if (!keyValidation.valid) {
       return NextResponse.json(
         {
@@ -532,14 +539,32 @@ export async function POST(req: Request) {
       methodUsed = `Simulated Rotation Mode (${sender.senderEmail})`;
     }
 
-    // 6. Record sent email in Supabase Database
+    // 6. Count against the API key (only now that the send succeeded) and log with attribution
+    let keyItemAfter = keyValidation.keyItem;
+    if (keyValidation.keyItem) {
+      try {
+        keyItemAfter = await recordKeyUsageAsync(keyValidation.keyItem);
+      } catch (e) {
+        console.warn('Failed to record API key usage after send:', e);
+      }
+    }
+
+    const sourceLabel = isDashboardSend
+      ? 'dashboard'
+      : (req.headers.get('x-mail-source') || '').trim().slice(0, 120) || 'api';
+
     await recordEmailSent({
       username: username || '', // never guess a creator from the email's local part
       email: recipientEmail,
       subject: finalSubject,
       body: messageBody,
       messageId,
-      senderEmail: sender.senderEmail
+      senderEmail: sender.senderEmail,
+      apiKeyId: keyValidation.keyItem?.id,
+      apiKeyName: keyValidation.keyItem?.name,
+      source: sourceLabel,
+      replyTo: effectiveReplyTo,
+      senderCategory: isHrSender ? 'hr' : sender.category
     });
 
     const nowIso = new Date().toISOString();
@@ -558,9 +583,19 @@ export async function POST(req: Request) {
       sentAt: nowIso,
       toEmail: recipientEmail,
       subject: finalSubject,
+      senderCategory: isHrSender ? 'hr' : sender.category,
+      source: sourceLabel,
       todaySentCount: newTodaySentCount,
       dailyLimit: totalDailyLimit,
-      remainingQuota: Math.max(0, totalDailyLimit - newTodaySentCount)
+      remainingQuota: Math.max(0, totalDailyLimit - newTodaySentCount),
+      ...(keyItemAfter ? {
+        apiKey: {
+          name: keyItemAfter.name,
+          todaySentCount: keyItemAfter.todaySentCount,
+          dailyLimit: keyItemAfter.dailyLimit,
+          remainingQuota: Math.max(0, keyItemAfter.dailyLimit - keyItemAfter.todaySentCount)
+        }
+      } : {})
     });
 
   } catch (error: any) {

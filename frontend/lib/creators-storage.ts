@@ -55,6 +55,12 @@ export async function recordEmailSent(params: {
   body: string;
   messageId?: string;
   senderEmail?: string;
+  // Attribution (who/what sent it) — lets a shared key's daily count be broken down
+  apiKeyId?: string;
+  apiKeyName?: string;
+  source?: string;
+  replyTo?: string;
+  senderCategory?: string;
 }) {
   const { username, email, subject, body, messageId, senderEmail } = params;
   const nowIso = new Date().toISOString();
@@ -85,18 +91,29 @@ export async function recordEmailSent(params: {
 
     // Log every send (creator or not) - this is the source of truth for history and daily counts
     try {
-      const { error: logError } = await getSupabaseAdmin().from('email_logs').insert([
-        {
-          recipient_email: cleanEmail,
-          username: cleanUser,
-          subject,
-          body,
-          message_id: messageId,
-          sender_email: senderEmail,
-          status: 'sent',
-          sent_at: nowIso
-        }
-      ]);
+      const baseRow = {
+        recipient_email: cleanEmail,
+        username: cleanUser,
+        subject,
+        body,
+        message_id: messageId,
+        sender_email: senderEmail,
+        status: 'sent',
+        sent_at: nowIso
+      };
+      const attribution = {
+        api_key_id: params.apiKeyId || null,
+        api_key_name: params.apiKeyName || null,
+        source: params.source || null,
+        reply_to: params.replyTo || null,
+        sender_category: params.senderCategory || null
+      };
+      let { error: logError } = await getSupabaseAdmin().from('email_logs').insert([{ ...baseRow, ...attribution }]);
+      // Attribution columns not migrated yet: still log the send rather than lose it
+      if (logError && /column .* does not exist|schema cache/i.test(logError.message)) {
+        console.warn('email_logs attribution columns missing; run the schema.sql migration. Logging without them.');
+        ({ error: logError } = await getSupabaseAdmin().from('email_logs').insert([baseRow]));
+      }
       if (logError) console.warn('email_logs insert error:', logError.message);
     } catch (logErr) {
       console.warn('email_logs insert error:', logErr);
