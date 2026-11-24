@@ -40,6 +40,13 @@ export default function EmailModal({
 
   const [availableSenders, setAvailableSenders] = useState<string[]>([]);
 
+  // CC / BCC (comma-separated), same email also goes to these addresses
+  const [ccInput, setCcInput] = useState('');
+  const [bccInput, setBccInput] = useState('');
+  const [showCc, setShowCc] = useState(false);
+  const [showBcc, setShowBcc] = useState(false);
+  const splitEmails = (v: string) => v.split(/[,;\s]+/).map(x => x.trim()).filter(Boolean);
+
   // Default footer/signature toggle (remembered in this browser)
   const [includeFooter, setIncludeFooter] = useState(true);
   useEffect(() => {
@@ -63,6 +70,10 @@ export default function EmailModal({
       setSendStatus(null);
       setChatMessages([]);
       setChatInput('');
+      setCcInput('');
+      setBccInput('');
+      setShowCc(false);
+      setShowBcc(false);
 
       fetch('/api/send-email')
         .then(res => res.json())
@@ -266,6 +277,8 @@ export default function EmailModal({
           signature,
           customSenderEmail: senderDomain,
           customSenderName: senderDisplayName.trim() || undefined,
+          cc: splitEmails(ccInput),
+          bcc: splitEmails(bccInput),
           replyTo: replyTo.trim(),
           includeFooter
         })
@@ -275,7 +288,12 @@ export default function EmailModal({
       if (data.success) {
         setSendStatus({
           success: true,
-          message: `Outreach email successfully dispatched to ${recipientEmail}!`,
+          message: `Email sent to ${recipientEmail}`
+            + (data.cc?.length ? ` · CC: ${data.cc.join(', ')}` : '')
+            + (data.bcc?.length ? ` · BCC: ${data.bcc.join(', ')}` : '')
+            + (data.skippedCopyRecipients?.length
+              ? ` · Skipped (suppressed): ${data.skippedCopyRecipients.map((s: any) => s.email).join(', ')}`
+              : ''),
           method: data.methodUsed
         });
         onEmailSentSuccess(creator?.username || recipientEmail.split('@')[0], subject, body);
@@ -296,7 +314,7 @@ export default function EmailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 animate-fade-in">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
         
         {/* Modal Header */}
@@ -401,7 +419,63 @@ export default function EmailModal({
                 placeholder="e.g. creator@example.com"
                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-900 text-xs focus:ring-2 focus:ring-violet-500 focus:outline-none"
               />
+              <div className="flex flex-wrap gap-1 pt-0.5">
+                {!showCc && (
+                  <button type="button" onClick={() => setShowCc(true)}
+                    className="text-[10px] px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-600 font-semibold hover:bg-violet-50">
+                    + CC
+                  </button>
+                )}
+                {!showBcc && (
+                  <button type="button" onClick={() => setShowBcc(true)}
+                    className="text-[10px] px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-600 font-semibold hover:bg-violet-50">
+                    + BCC
+                  </button>
+                )}
+                {!splitEmails(bccInput).includes('support@makeable.nyc') && (
+                  <button type="button"
+                    onClick={() => { setShowBcc(true); setBccInput(v => [...splitEmails(v), 'support@makeable.nyc'].join(', ')); }}
+                    className="text-[10px] px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold hover:bg-emerald-100">
+                    BCC me (support@makeable.nyc)
+                  </button>
+                )}
+              </div>
             </div>
+
+            {(showCc || showBcc) && (
+              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {showCc && (
+                  <div className="space-y-1">
+                    <label className="flex items-center justify-between font-bold text-slate-800 text-[11px]">
+                      <span>CC (visible copy, comma-separated):</span>
+                      <button type="button" onClick={() => { setShowCc(false); setCcInput(''); }} className="text-slate-400 hover:text-rose-600 text-[10px]">remove</button>
+                    </label>
+                    <input
+                      type="text"
+                      value={ccInput}
+                      onChange={(e) => setCcInput(e.target.value)}
+                      placeholder="manager@agency.com, team@brand.com"
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg font-mono text-slate-900 text-xs focus:ring-2 focus:ring-violet-500 focus:outline-none"
+                    />
+                  </div>
+                )}
+                {showBcc && (
+                  <div className="space-y-1">
+                    <label className="flex items-center justify-between font-bold text-slate-800 text-[11px]">
+                      <span>BCC (hidden copy, comma-separated):</span>
+                      <button type="button" onClick={() => { setShowBcc(false); setBccInput(''); }} className="text-slate-400 hover:text-rose-600 text-[10px]">remove</button>
+                    </label>
+                    <input
+                      type="text"
+                      value={bccInput}
+                      onChange={(e) => setBccInput(e.target.value)}
+                      placeholder="support@makeable.nyc"
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg font-mono text-slate-900 text-xs focus:ring-2 focus:ring-violet-500 focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Reply-To Email Field */}
             <div className="sm:col-span-2 space-y-1 pt-2 border-t border-slate-200/80">

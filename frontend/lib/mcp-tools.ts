@@ -108,7 +108,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'send_mail',
     title: 'Send email',
-    description: 'Send one email through the MakeAble sender rotation (Outreach + HR senders). Suppressed recipients are refused. If no subject is given, a preset subject is used. An optional reply_to email can be specified (e.g. support@makeable.nyc or an HR inbox). Counts against the daily limit.',
+    description: 'Send one email through the MakeAble sender rotation (Outreach + HR senders). Suppressed recipients are refused. If no subject is given, a preset subject is used. An optional reply_to email can be specified (e.g. support@makeable.nyc or an HR inbox). Optional cc / bcc send the same email to extra addresses (max 50 each; suppressed ones are skipped). Counts as one email against the daily limit.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -117,6 +117,8 @@ export const TOOLS: ToolDefinition[] = [
         subject: { type: 'string', description: 'Optional subject line. Falls back to the preset rotation.' },
         reply_to: { type: 'string', description: 'Optional Reply-To email address (e.g. support@makeable.nyc, hr@makeable.work, or custom Gmail).' },
         replyTo: { type: 'string', description: 'Optional Reply-To email address (alias for reply_to).' },
+        cc: { type: 'array', items: { type: 'string' }, maxItems: 50, description: 'Optional CC addresses (visible to all recipients).' },
+        bcc: { type: 'array', items: { type: 'string' }, maxItems: 50, description: 'Optional BCC addresses (hidden copy).' },
         from_email: { type: 'string', description: 'Optional specific sender email to send from.' },
         sender_name: { type: 'string', description: 'Optional custom sender display name.' },
         username: { type: 'string', description: 'Optional creator username, used to mark the creator as emailed.' }
@@ -134,6 +136,14 @@ export const TOOLS: ToolDefinition[] = [
       const fromEmail = optionalString(args.from_email || args.fromEmail, 'from_email', 200);
       const senderName = optionalString(args.sender_name || args.senderName, 'sender_name', 200);
       const username = optionalString(args.username, 'username', 200);
+      const toList = (v: unknown, name: string): string[] | undefined => {
+        if (v === undefined || v === null || v === '') return undefined;
+        if (typeof v === 'string') return v.split(/[,;]+/).map(x => x.trim()).filter(Boolean);
+        if (Array.isArray(v) && v.every(x => typeof x === 'string')) return v as string[];
+        throw new ToolError(`"${name}" must be an array of email addresses.`);
+      };
+      const cc = toList(args.cc, 'cc');
+      const bcc = toList(args.bcc, 'bcc');
 
       const suppression = await getSuppression(toEmail);
       if (suppression) {
@@ -148,7 +158,7 @@ export const TOOLS: ToolDefinition[] = [
 
       return callMailApi(ctx, '/api/v1/send-mail', {
         method: 'POST',
-        body: { toEmail, body, subject, username, replyTo, fromEmail, senderName }
+        body: { toEmail, body, subject, username, replyTo, fromEmail, senderName, cc, bcc }
       });
     }
   },
