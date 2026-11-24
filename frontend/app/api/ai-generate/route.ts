@@ -15,7 +15,11 @@ export async function POST(req: Request) {
       signature,
       customBrandInfo,
       commissionRate = '15%',
-      buyerDiscount = '10%'
+      buyerDiscount = '10%',
+      chatMessages,   // compose mode: [{ role: 'user' | 'assistant', content: string }]
+      currentSubject, // compose mode: draft currently in the editor (may be user-edited)
+      currentBody,
+      recipientEmail
     } = await req.json();
 
     const apiKey = process.env.OPENAI_API_KEY;
@@ -27,6 +31,56 @@ export async function POST(req: Request) {
       try {
         const openai = new OpenAI({ apiKey: apiKey.trim() });
         const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+
+        if (mode === 'compose') {
+          const history = Array.isArray(chatMessages)
+            ? chatMessages
+                .filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+                .slice(-12)
+                .map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content.slice(0, 4000) }))
+            : [];
+          if (!history.length || history[history.length - 1].role !== 'user') {
+            return NextResponse.json({ success: false, error: 'Tell the AI what the email should say.' }, { status: 400 });
+          }
+
+          const systemPrompt = `You are an email-writing assistant inside the ${senderBrand} dashboard (${brandSite}).
+The user describes, in plain words, an email they want to send (any purpose: creator outreach, HR, follow-ups, partnerships, replies, etc.).
+Write the email for them: a clear subject line and a ready-to-send body. On follow-up messages, revise the CURRENT DRAFT according to the instruction instead of starting over.
+
+Rules:
+- Write in a natural, human, professional tone. Match the length/tone the user asks for.
+- Never invent facts, prices, dates or names the user did not give; use a neutral wording instead.
+- Use plain-text URLs (no markdown link syntax). **bold** and "• " bullets are allowed.
+- Greet the recipient by name if known${recipientEmail ? ` (recipient email: ${recipientEmail})` : ''}.
+- Sign off with:
+  ${senderName}
+  ${senderBrand}
+- If the instruction is unclear, still produce your best draft and ask one short question in "reply".
+
+CURRENT DRAFT (may have been hand-edited by the user):
+Subject: ${currentSubject || '(empty)'}
+Body:
+${currentBody || '(empty)'}
+
+Return STRICT JSON: { "reply": "one or two sentences telling the user what you wrote or changed", "subject": "string", "body": "string" }`;
+
+          const completion = await openai.chat.completions.create({
+            model,
+            messages: [{ role: 'system', content: systemPrompt }, ...history],
+            response_format: { type: 'json_object' },
+            temperature: 0.7,
+          });
+
+          const parsed = JSON.parse(completion.choices[0].message.content || '{}');
+          if (!parsed.body) throw new Error('AI returned an empty draft.');
+          return NextResponse.json({
+            success: true,
+            reply: parsed.reply || 'Draft updated. Review it below.',
+            subject: parsed.subject || currentSubject || '',
+            body: parsed.body,
+            usedAi: true
+          });
+        }
 
         if (mode === 'enhance' && userBody && userBody.trim().length > 0) {
           const enhancePrompt = `You are an expert Creator Outreach Copywriter for "${senderBrand}" (${brandSite}).
@@ -124,6 +178,13 @@ Return STRICT JSON format:
       } catch (aiErr: any) {
         console.warn('OpenAI API call failed, using dynamic generator:', aiErr.message);
       }
+    }
+
+    if (mode === 'compose') {
+      return NextResponse.json(
+        { success: false, error: 'AI chat is unavailable: OPENAI_API_KEY is missing or the AI request failed. Please try again.' },
+        { status: 503 }
+      );
     }
 
     // Dynamic Fallback Generator

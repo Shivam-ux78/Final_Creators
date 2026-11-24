@@ -8,7 +8,7 @@ import { validateApiKeyAsync, recordKeyUsageAsync } from '../../../../lib/api-ke
 import { verifySessionToken, AUTH_COOKIE_NAME } from '../../../../lib/auth';
 import { getSuppression } from '../../../../lib/suppressions';
 
-import { getConfiguredSenders, SenderAccount } from '../../../../lib/senders-config';
+import { getConfiguredSenders, isDashboardOnlySender, SenderAccount } from '../../../../lib/senders-config';
 
 // Logged-in dashboard users may send and edit presets without an API key
 function hasDashboardSession(): boolean {
@@ -421,9 +421,29 @@ export async function POST(req: Request) {
       );
     }
 
+    // 1b. makeable.nyc is dashboard-only: never send from it via API key / MCP
+    const keyAllowed = keyValidation.keyItem?.allowedSenders || [];
+    if (!isDashboardSend && keyAllowed.length > 0 && keyAllowed.every(e => isDashboardOnlySender(e))) {
+      return NextResponse.json(
+        { success: false, status: 'failed', emailSent: false, error: 'This API key only allows makeable.nyc senders, which are dashboard-only.' },
+        { status: 403 }
+      );
+    }
+    if (!isDashboardSend && isDashboardOnlySender(requestedFromEmail)) {
+      return NextResponse.json(
+        {
+          success: false,
+          status: 'failed',
+          emailSent: false,
+          error: `Sender "${requestedFromEmail}" (makeable.nyc) can only be used from the dashboard, not via API or MCP.`
+        },
+        { status: 403 }
+      );
+    }
+
     // 2. Perform Round Robin Sender Rotation (scoped to API key's allowedSenders if configured)
     const { step, totalSenders, sender, allSenders, error: senderError } = getNextRotatedSender({
-      allowedSenders: keyValidation.keyItem?.allowedSenders,
+      allowedSenders: keyValidation.keyItem?.allowedSenders?.filter(e => !isDashboardOnlySender(e)),
       preferredFromEmail: requestedFromEmail,
       keyId: keyValidation.keyItem?.id
     });

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Send, RefreshCw, CheckCircle2, Wand2, Mail, Info, Percent, Gift, Tag, Globe, User } from 'lucide-react';
+import { X, Sparkles, Send, RefreshCw, CheckCircle2, Wand2, Mail, Info, Percent, Gift, Tag, Globe, User, MessageSquare, Bot } from 'lucide-react';
 import { Creator, EmailSignature } from '../lib/types';
 
 interface EmailModalProps {
@@ -20,7 +20,12 @@ export default function EmailModal({
   signature
 }: EmailModalProps) {
   const [recipientEmail, setRecipientEmail] = useState('');
-  const [senderDomain, setSenderDomain] = useState('collab@makeable.work');
+  // From address = <senderPrefix>@<senderDomainName>; prefix is free text (any name) or a preset
+  const [senderPrefix, setSenderPrefix] = useState('collab');
+  const [senderDomainName, setSenderDomainName] = useState('makeable.nyc');
+  const [senderDisplayName, setSenderDisplayName] = useState('');
+  const senderDomain = `${senderPrefix.trim().toLowerCase()}@${senderDomainName}`;
+  const isValidPrefix = /^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$/i.test(senderPrefix.trim());
   const [replyTo, setReplyTo] = useState('support@makeable.nyc');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -35,10 +40,17 @@ export default function EmailModal({
 
   const [availableSenders, setAvailableSenders] = useState<string[]>([]);
 
+  // AI chat composer: describe the email in plain words, AI fills subject + body for review
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isComposing, setIsComposing] = useState(false);
+
   // Auto-fill recipient email and generate pitch when modal opens
   useEffect(() => {
     if (isOpen) {
       setSendStatus(null);
+      setChatMessages([]);
+      setChatInput('');
 
       fetch('/api/send-email')
         .then(res => res.json())
@@ -46,9 +58,8 @@ export default function EmailModal({
           if (data.configuredSenders && data.configuredSenders.length > 0) {
             const list = data.configuredSenders.map((s: any) => s.email);
             setAvailableSenders(list);
-            if (!senderDomain || !list.includes(senderDomain)) {
-              setSenderDomain(list[0]);
-            }
+            const doms = list.map((e: string) => e.split('@')[1]);
+            setSenderDomainName(prev => (doms.includes(prev) ? prev : doms[0]));
           }
         })
         .catch(err => console.warn('Failed to load senders list:', err));
@@ -151,8 +162,60 @@ export default function EmailModal({
     }
   };
 
-  const handleSenderChange = (newSender: string) => {
-    setSenderDomain(newSender);
+  const handleChatCompose = async () => {
+    const text = chatInput.trim();
+    if (!text || isComposing) return;
+
+    const nextMessages = [...chatMessages, { role: 'user' as const, content: text }];
+    setChatMessages(nextMessages);
+    setChatInput('');
+    setIsComposing(true);
+    setSendStatus(null);
+
+    try {
+      const res = await fetch('/api/ai-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'compose',
+          chatMessages: nextMessages,
+          currentSubject: subject,
+          currentBody: body,
+          recipientEmail: recipientEmail.trim(),
+          name: creator?.name,
+          username: creator?.username,
+          signature
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSubject(data.subject || subject);
+        setBody(data.body);
+        setChatMessages([...nextMessages, { role: 'assistant', content: data.reply || 'Draft ready. Review it below.' }]);
+      } else {
+        setChatMessages([...nextMessages, { role: 'assistant', content: `⚠️ ${data.error || 'AI could not write the email.'}` }]);
+      }
+    } catch (e: any) {
+      setChatMessages([...nextMessages, { role: 'assistant', content: `⚠️ ${e.message || 'Network error contacting AI.'}` }]);
+    } finally {
+      setIsComposing(false);
+    }
+  };
+
+  // Unique verified domains (makeable.nyc first) and preset names for the From field
+  const senderDomains = Array.from(new Set(availableSenders.map(e => e.split('@')[1]).filter(Boolean)))
+    .sort((a, b) => (a === 'makeable.nyc' ? -1 : b === 'makeable.nyc' ? 1 : 0));
+  const domainOptions = senderDomains.length > 0 ? senderDomains : ['makeable.nyc', 'makeable.work', 'makeable.website', 'makeable.online'];
+  const presetPrefixes = Array.from(new Set([
+    'shivam', 'aryan', 'collab', 'hello', 'outreach', 'support', 'partnerships', 'team', 'creators', 'info',
+    'hr', 'careers', 'hiring', 'talent', 'jobs',
+    ...availableSenders.map(e => e.split('@')[0])
+  ]));
+
+  const handleSenderChange = (prefix: string, domain: string) => {
+    setSenderPrefix(prefix);
+    setSenderDomainName(domain);
+    const newSender = `${prefix.trim().toLowerCase()}@${domain}`;
     const isHr = /^(hr|careers|talent|hiring|recruiting|people|jobs)@/i.test(newSender);
     if (isHr) {
       setReplyTo(newSender);
@@ -168,6 +231,10 @@ export default function EmailModal({
     }
     if (!subject.trim() || !body.trim()) {
       alert('Please make sure both subject and email body are filled.');
+      return;
+    }
+    if (!isValidPrefix) {
+      alert('Sender name before @ can only use letters, numbers, dot, dash, underscore or plus (e.g. aryan, xyz, team.ny).');
       return;
     }
 
@@ -186,6 +253,7 @@ export default function EmailModal({
           body,
           signature,
           customSenderEmail: senderDomain,
+          customSenderName: senderDisplayName.trim() || undefined,
           replyTo: replyTo.trim()
         })
       });
@@ -256,23 +324,56 @@ export default function EmailModal({
                 <Globe className="h-3.5 w-3.5 text-violet-600" />
                 <span>From Sending Address:</span>
               </label>
-              <select
-                value={senderDomain}
-                onChange={(e) => handleSenderChange(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg font-mono font-semibold text-slate-900 text-xs focus:ring-2 focus:ring-violet-500 focus:outline-none"
-              >
-                {availableSenders.length > 0 ? (
-                  availableSenders.map(email => (
-                    <option key={email} value={email}>{email}</option>
-                  ))
-                ) : (
-                  <>
-                    <option value="collab@makeable.work">collab@makeable.work</option>
-                    <option value="collab@makeable.website">collab@makeable.website</option>
-                    <option value="collab@makeable.online">collab@makeable.online</option>
-                  </>
-                )}
-              </select>
+              <div className={`flex items-stretch bg-white border rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-violet-500 ${
+                isValidPrefix ? 'border-slate-200' : 'border-rose-400'
+              }`}>
+                <input
+                  type="text"
+                  list="sender-prefix-presets"
+                  value={senderPrefix}
+                  onChange={(e) => handleSenderChange(e.target.value.replace(/[\s@]/g, ''), senderDomainName)}
+                  placeholder="name"
+                  className="w-0 flex-1 min-w-0 px-3 py-2 font-mono font-semibold text-slate-900 text-xs focus:outline-none"
+                  title="Type any name (e.g. aryan, xyz) or pick a preset"
+                />
+                <span className="px-1.5 flex items-center bg-slate-100 text-slate-500 font-mono font-bold border-x border-slate-200">@</span>
+                <select
+                  value={senderDomainName}
+                  onChange={(e) => handleSenderChange(senderPrefix, e.target.value)}
+                  className="px-2 py-2 bg-slate-50 font-mono font-semibold text-slate-900 text-xs focus:outline-none"
+                >
+                  {domainOptions.map(d => (
+                    <option key={d} value={d}>{d}{d === 'makeable.nyc' ? ' ★' : ''}</option>
+                  ))}
+                </select>
+              </div>
+              <datalist id="sender-prefix-presets">
+                {presetPrefixes.map(p => <option key={p} value={p} />)}
+              </datalist>
+              <div className="flex flex-wrap gap-1 pt-0.5">
+                {['shivam', 'aryan', 'collab', 'hello', 'support', 'hr'].map(p => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => handleSenderChange(p, senderDomainName)}
+                    className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
+                      senderPrefix === p
+                        ? 'bg-violet-600 border-violet-600 text-white'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-violet-50'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                value={senderDisplayName}
+                onChange={(e) => setSenderDisplayName(e.target.value)}
+                placeholder="Display name (optional), e.g. Aryan from MakeAble"
+                className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-[11px] focus:ring-2 focus:ring-violet-500 focus:outline-none"
+              />
+              <p className="text-[10px] text-slate-500 font-mono">Sends from: {senderDisplayName.trim() ? `${senderDisplayName.trim()} <${senderDomain}>` : senderDomain}</p>
             </div>
 
             <div className="space-y-1">
@@ -370,6 +471,75 @@ export default function EmailModal({
                 <span>{isEnhancing ? 'Enhancing...' : '🪄 Enhance My Draft'}</span>
               </button>
             </div>
+          </div>
+
+          {/* AI Chat Composer */}
+          <div className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                <MessageSquare className="h-3.5 w-3.5 text-indigo-600" />
+                <span>AI Chat: describe the email, AI writes subject + body</span>
+              </span>
+              {chatMessages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setChatMessages([])}
+                  className="text-[10px] px-2 py-0.5 rounded bg-white border border-indigo-200 text-indigo-700 font-semibold hover:bg-indigo-100"
+                >
+                  New chat
+                </button>
+              )}
+            </div>
+
+            {chatMessages.length > 0 && (
+              <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                {chatMessages.map((m, i) => (
+                  <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[85%] px-3 py-1.5 rounded-xl text-[11px] leading-relaxed whitespace-pre-wrap ${
+                      m.role === 'user'
+                        ? 'bg-indigo-600 text-white rounded-br-sm'
+                        : 'bg-white border border-indigo-100 text-slate-700 rounded-bl-sm'
+                    }`}>
+                      {m.role === 'assistant' && <Bot className="inline h-3 w-3 mr-1 text-indigo-500 -mt-0.5" />}
+                      {m.content}
+                    </div>
+                  </div>
+                ))}
+                {isComposing && (
+                  <div className="text-[11px] text-indigo-500 font-medium flex items-center space-x-1">
+                    <RefreshCw className="h-3 w-3 animate-spin" /><span>Writing your email...</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-end gap-2">
+              <textarea
+                rows={2}
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleChatCompose();
+                  }
+                }}
+                placeholder={chatMessages.length === 0
+                  ? 'e.g. Follow up with Sarah about last week\'s reel, thank her and ask for the next posting date'
+                  : 'e.g. make it shorter / more formal / add that we pay within 7 days'}
+                className="flex-1 px-3 py-2 bg-white border border-indigo-200 rounded-lg text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none"
+              />
+              <button
+                type="button"
+                onClick={handleChatCompose}
+                disabled={isComposing || !chatInput.trim()}
+                className="flex items-center space-x-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm disabled:opacity-50"
+              >
+                <Send className="h-3.5 w-3.5" />
+                <span>{chatMessages.length === 0 ? 'Write' : 'Revise'}</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-500">Enter to send, Shift+Enter for a new line. Nothing is emailed until you click &quot;Send Single Email Now&quot;.</p>
           </div>
 
           {/* Subject line */}
