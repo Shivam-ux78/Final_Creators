@@ -146,6 +146,8 @@ export function getConfiguredSenders(): SenderAccount[] {
     }
 
     for (const custom of getCustomSenders()) {
+      // makeable.nyc is dashboard-only; never let it enter API/MCP rotation
+      if (custom.email.toLowerCase().endsWith(`@${DASHBOARD_ONLY_DOMAIN}`)) continue;
       const lower = custom.email.toLowerCase();
       if (!seen.has(lower)) {
         seen.add(lower);
@@ -163,5 +165,52 @@ export function getConfiguredSenders(): SenderAccount[] {
   }
 
   return accounts;
+}
+
+// makeable.nyc is the primary brand domain. It is verified on RESEND_API_KEY_2 but is
+// intentionally kept OUT of getConfiguredSenders() (used by the public API, MCP and
+// automated rotation) so it is only reachable from the logged-in dashboard.
+const DASHBOARD_ONLY_DOMAIN = 'makeable.nyc';
+const DASHBOARD_ONLY_PREFIXES = ['shivam', 'aryan', 'collab', 'hello', 'outreach', 'support'];
+
+export function isDashboardOnlySender(email?: string | null): boolean {
+  return !!email && email.trim().toLowerCase().endsWith(`@${DASHBOARD_ONLY_DOMAIN}`);
+}
+
+export function getDashboardSenders(): SenderAccount[] {
+  const apiKey = process.env.RESEND_API_KEY_2 || process.env.RESEND_API_KEY || '';
+  const senderName = process.env.SENDER_NAME || 'MakeAble Partnerships';
+  const nyc: SenderAccount[] = [];
+
+  if (apiKey.startsWith('re_')) {
+    for (const prefix of DASHBOARD_ONLY_PREFIXES) {
+      const email = `${prefix}@${DASHBOARD_ONLY_DOMAIN}`;
+      nyc.push({
+        id: `sender_${prefix}_makeable_nyc`,
+        apiKey,
+        senderName,
+        senderEmail: email,
+        label: `${senderName} (${email})`,
+        category: 'outreach'
+      });
+    }
+    // custom senders on .nyc (skipped by getConfiguredSenders) are also dashboard-only
+    for (const custom of getCustomSenders()) {
+      const lower = custom.email.toLowerCase();
+      if (lower.endsWith(`@${DASHBOARD_ONLY_DOMAIN}`) && !nyc.some(s => s.senderEmail === lower)) {
+        const displayName = custom.senderName || senderName;
+        nyc.push({
+          id: `sender_custom_${lower.replace(/[^a-z0-9]/g, '_')}`,
+          apiKey,
+          senderName: displayName,
+          senderEmail: lower,
+          label: `${displayName} (${lower})`,
+          category: 'custom'
+        });
+      }
+    }
+  }
+
+  return [...nyc, ...getConfiguredSenders()];
 }
 

@@ -2,14 +2,14 @@ import { NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import { recordEmailSent, getTodaySentCountFromSupabase, getDailyLimitInfo } from '../../../lib/creators-storage';
-import { getConfiguredSenders } from '../../../lib/senders-config';
+import { getDashboardSenders } from '../../../lib/senders-config';
 
 // GET: Check live daily email sending stats, limit, and remaining quota
 export async function GET() {
   try {
     const todaySentCount = await getTodaySentCountFromSupabase();
     const { limitPerDomain, totalDailyLimit } = getDailyLimitInfo();
-    const senders = getConfiguredSenders();
+    const senders = getDashboardSenders();
 
     return NextResponse.json({
       success: true,
@@ -83,19 +83,37 @@ export async function POST(req: Request) {
 
     // 2. Resolve API Key & Senders (Support header key, payload key, or server default)
     const providedApiKey = apiKeyInBody || resendKeyInBody || xApiKeyHeader || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : '');
-    const accounts = getConfiguredSenders();
+    const accounts = getDashboardSenders();
 
     let resendApiKey = providedApiKey || process.env.RESEND_API_KEY_2 || (accounts.length > 0 ? accounts[0].apiKey : '');
     let senderName = customSenderName || process.env.SENDER_NAME || signature?.senderName || 'MakeAble Partnerships';
     let senderEmail = customSenderEmail || (accounts.length > 0 ? accounts[0].senderEmail : 'collab@makeable.work');
 
     if (customSenderEmail && accounts.length > 0) {
-      const domainPart = customSenderEmail.trim().toLowerCase().split('@')[1] || '';
-      const matched = accounts.find(a => a.senderEmail.toLowerCase().includes(domainPart));
+      const wanted = customSenderEmail.trim().toLowerCase();
+      const [localPart = '', domainPart = ''] = wanted.split('@');
+      // Any name before @ is allowed, but only on a verified sending domain
+      if (!/^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$/.test(localPart)) {
+        return NextResponse.json(
+          { success: false, error: `Invalid sender name "${localPart}". Use letters, numbers, dot, dash, underscore or plus.` },
+          { status: 400 }
+        );
+      }
+      if (!accounts.some(a => a.senderEmail.toLowerCase().endsWith(`@${domainPart}`))) {
+        return NextResponse.json(
+          { success: false, error: `Domain "${domainPart}" is not a verified sending domain.` },
+          { status: 400 }
+        );
+      }
+      // Exact address first; fall back to same-domain account only for its API key,
+      // keeping the address the user actually picked.
+      const matched =
+        accounts.find(a => a.senderEmail.toLowerCase() === wanted) ||
+        accounts.find(a => a.senderEmail.toLowerCase().endsWith(`@${domainPart}`));
       if (matched) {
         if (!providedApiKey) resendApiKey = matched.apiKey;
         senderName = customSenderName || matched.senderName;
-        senderEmail = matched.senderEmail;
+        senderEmail = wanted;
       }
     }
 
