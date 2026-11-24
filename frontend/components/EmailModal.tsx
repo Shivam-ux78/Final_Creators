@@ -40,6 +40,18 @@ export default function EmailModal({
 
   const [availableSenders, setAvailableSenders] = useState<string[]>([]);
 
+  // Default footer/signature toggle (remembered in this browser)
+  const [includeFooter, setIncludeFooter] = useState(true);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('makeable_include_footer') === 'false') setIncludeFooter(false);
+    } catch {}
+  }, []);
+  const toggleFooter = (on: boolean) => {
+    setIncludeFooter(on);
+    try { localStorage.setItem('makeable_include_footer', String(on)); } catch {}
+  };
+
   // AI chat composer: describe the email in plain words, AI fills subject + body for review
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -254,7 +266,8 @@ export default function EmailModal({
           signature,
           customSenderEmail: senderDomain,
           customSenderName: senderDisplayName.trim() || undefined,
-          replyTo: replyTo.trim()
+          replyTo: replyTo.trim(),
+          includeFooter
         })
       });
       const data = await res.json();
@@ -573,13 +586,31 @@ export default function EmailModal({
             />
           </div>
 
-          {/* Attached Signature Preview */}
-          <div className="p-3 bg-slate-100/80 border border-slate-200 rounded-xl text-xs text-slate-600">
-            <span className="font-bold text-slate-700 block mb-1">Attached Sender Signature (Reply-To: {replyTo}):</span>
-            <div className="text-[11px] space-y-0.5 font-mono text-slate-500">
-              <div>{signature.senderName} ({signature.title || 'Lead'})</div>
-              <div>{signature.brandName} • {signature.website} • Apply: https://makeable.nyc/creators/apply</div>
-            </div>
+          {/* Footer / Signature toggle */}
+          <div className={`p-3 border rounded-xl text-xs ${includeFooter ? 'bg-slate-100/80 border-slate-200 text-slate-600' : 'bg-amber-50/60 border-amber-200 text-slate-600'}`}>
+            <label className="flex items-center space-x-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={includeFooter}
+                onChange={(e) => toggleFooter(e.target.checked)}
+                className="h-3.5 w-3.5 accent-violet-600"
+              />
+              <span className="font-bold text-slate-700">Add default footer / signature</span>
+              <span className="text-[10px] text-slate-400">(Reply-To: {replyTo})</span>
+            </label>
+            {includeFooter ? (
+              <div className="text-[11px] space-y-0.5 font-mono text-slate-500 mt-1.5 pl-5">
+                <div>---</div>
+                <div>{signature.senderName}</div>
+                <div>{signature.title ? `${signature.title} | ` : ''}{signature.brandName}</div>
+                <div>{signature.website}</div>
+                {signature.phone && <div>{signature.phone}</div>}
+              </div>
+            ) : (
+              <p className="text-[11px] text-amber-700 mt-1.5 pl-5">
+                No footer will be added. Write your own custom footer at the end of the message body.
+              </p>
+            )}
           </div>
 
           {/* Send Status Alert */}

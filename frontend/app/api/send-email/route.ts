@@ -119,7 +119,8 @@ export async function POST(req: Request) {
 
     // Append signature if present and not already at end of body
     let finalBody = body;
-    if (signature && signature.senderName && !body.includes(signature.senderName)) {
+    // includeFooter === false lets the user send with their own custom footer instead
+    if (bodyData.includeFooter !== false && signature && signature.senderName && !body.includes(signature.senderName)) {
       finalBody += `\n\n---\n${signature.senderName}\n${signature.title ? signature.title + ' | ' : ''}${signature.brandName}\n${signature.website}\n${signature.phone || ''}`;
     }
 
