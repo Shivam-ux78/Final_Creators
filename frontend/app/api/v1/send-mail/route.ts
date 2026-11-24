@@ -7,6 +7,7 @@ import { recordEmailSent, getTodaySentCountFromSupabase, getDailyLimitInfo } fro
 import { validateApiKeyAsync, recordKeyUsageAsync } from '../../../../lib/api-keys-storage';
 import { verifySessionToken, AUTH_COOKIE_NAME } from '../../../../lib/auth';
 import { getSuppression } from '../../../../lib/suppressions';
+import { resolveCopyRecipients } from '../../../../lib/recipients';
 
 import { getConfiguredSenders, isDashboardOnlySender, SenderAccount } from '../../../../lib/senders-config';
 
@@ -335,7 +336,9 @@ export async function POST(req: Request) {
       replyTo,
       reply_to,
       replyToEmail,
-      reply_to_email
+      reply_to_email,
+      cc,
+      bcc
     } = bodyData;
 
     const recipientEmail = (toEmail || to_email || '').trim();
@@ -400,6 +403,15 @@ export async function POST(req: Request) {
           suppressed: true
         },
         { status: 409 }
+      );
+    }
+
+    // 0c. CC / BCC: validate, de-duplicate, drop suppressed addresses
+    const copies = await resolveCopyRecipients(recipientEmail, cc, bcc);
+    if (copies.error) {
+      return NextResponse.json(
+        { success: false, status: 'failed', emailSent: false, error: copies.error },
+        { status: 400 }
       );
     }
 
@@ -539,6 +551,8 @@ export async function POST(req: Request) {
       const resendData = await resend.emails.send({
         from: `${effectiveSenderName} <${sender.senderEmail}>`,
         to: [recipientEmail],
+        ...(copies.cc.length ? { cc: copies.cc } : {}),
+        ...(copies.bcc.length ? { bcc: copies.bcc } : {}),
         replyTo: effectiveReplyTo,
         reply_to: effectiveReplyTo as any,
         headers: {
@@ -602,6 +616,9 @@ export async function POST(req: Request) {
       nextDomainWillBe: allSenders[step % totalSenders].senderEmail,
       sentAt: nowIso,
       toEmail: recipientEmail,
+      cc: copies.cc,
+      bcc: copies.bcc,
+      ...(copies.skipped.length ? { skippedCopyRecipients: copies.skipped } : {}),
       subject: finalSubject,
       senderCategory: isHrSender ? 'hr' : sender.category,
       source: sourceLabel,

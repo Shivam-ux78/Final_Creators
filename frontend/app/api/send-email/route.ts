@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import { recordEmailSent, getTodaySentCountFromSupabase, getDailyLimitInfo } from '../../../lib/creators-storage';
 import { getDashboardSenders } from '../../../lib/senders-config';
+import { resolveCopyRecipients } from '../../../lib/recipients';
 
 // GET: Check live daily email sending stats, limit, and remaining quota
 export async function GET() {
@@ -49,6 +50,8 @@ export async function POST(req: Request) {
       customSenderName,
       replyTo,
       reply_to,
+      cc,
+      bcc,
       apiKey: apiKeyInBody,
       resendApiKey: resendKeyInBody,
       dailyLimit: customDailyLimit
@@ -59,6 +62,12 @@ export async function POST(req: Request) {
         { success: false, error: 'Missing required fields: toEmail, subject, or body.' },
         { status: 400 }
       );
+    }
+
+    // CC / BCC: validate, de-duplicate, drop suppressed addresses
+    const copies = await resolveCopyRecipients(toEmail, cc, bcc);
+    if (copies.error) {
+      return NextResponse.json({ success: false, error: copies.error }, { status: 400 });
     }
 
     // 1. Enforce Daily Sending Limit
@@ -180,6 +189,8 @@ export async function POST(req: Request) {
       const resendData = await resend.emails.send({
         from: `${senderName} <${senderEmail}>`,
         to: [toEmail],
+        ...(copies.cc.length ? { cc: copies.cc } : {}),
+        ...(copies.bcc.length ? { bcc: copies.bcc } : {}),
         replyTo: replyToEmail,
         reply_to: replyToEmail as any,
         headers: {
@@ -211,6 +222,8 @@ export async function POST(req: Request) {
       const info = await transporter.sendMail({
         from: `"${senderName}" <${process.env.SMTP_USER}>`,
         to: toEmail,
+        ...(copies.cc.length ? { cc: copies.cc } : {}),
+        ...(copies.bcc.length ? { bcc: copies.bcc } : {}),
         replyTo: replyToEmail,
         headers: {
           'Reply-To': replyToEmail
@@ -248,6 +261,9 @@ export async function POST(req: Request) {
       methodUsed,
       sentAt: nowIso,
       toEmail,
+      cc: copies.cc,
+      bcc: copies.bcc,
+      ...(copies.skipped.length ? { skippedCopyRecipients: copies.skipped } : {}),
       username: username || null,
       senderEmail,
       todaySentCount: newTodaySentCount,

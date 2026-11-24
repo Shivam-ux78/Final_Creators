@@ -23,7 +23,7 @@ export async function GET(req: Request) {
         post: {
           operationId: 'sendMail',
           summary: 'Send an email',
-          description: 'Dispatches an email through MakeAble sender rotation (Outreach + HR senders). Supports custom replyTo, fromEmail, and senderName.',
+          description: 'Dispatches an email through MakeAble sender rotation (Outreach + HR senders). Supports custom replyTo, fromEmail, senderName, and cc/bcc copy recipients.',
           requestBody: {
             required: true,
             content: {
@@ -49,6 +49,18 @@ export async function GET(req: Request) {
                       type: 'string',
                       format: 'email',
                       description: 'Optional Reply-To email address (e.g. support@makeable.nyc, hr@makeable.work, or a custom Gmail).'
+                    },
+                    cc: {
+                      type: 'array',
+                      items: { type: 'string', format: 'email' },
+                      maxItems: 50,
+                      description: 'Optional CC recipients (visible copy). Also accepts a comma-separated string.'
+                    },
+                    bcc: {
+                      type: 'array',
+                      items: { type: 'string', format: 'email' },
+                      maxItems: 50,
+                      description: 'Optional BCC recipients (hidden copy). Also accepts a comma-separated string.'
                     },
                     fromEmail: {
                       type: 'string',
@@ -81,6 +93,9 @@ export async function GET(req: Request) {
                       messageId: { type: 'string' },
                       senderEmail: { type: 'string' },
                       replyTo: { type: 'string' },
+                      cc: { type: 'array', items: { type: 'string' } },
+                      bcc: { type: 'array', items: { type: 'string' } },
+                      skippedCopyRecipients: { type: 'array', items: { type: 'object' }, description: 'CC/BCC addresses skipped because they are suppressed.' },
                       rotationStep: { type: 'string' },
                       todaySentCount: { type: 'number' },
                       dailyLimit: { type: 'number' },

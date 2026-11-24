@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useDeferredValue } from 'react';
 import Navbar from '../components/Navbar';
 import MetricsHeader from '../components/MetricsHeader';
 import FiltersBar from '../components/FiltersBar';
@@ -61,28 +61,60 @@ export default function DashboardPage() {
     total: 0
   });
 
-  // Poll background batch status periodically
+  // Poll background batch status: fast (3s) only while a batch runs, slow (15s) when idle,
+  // paused while the tab is hidden, and state only updates when something changed
+  // (otherwise every poll re-rendered the whole creator table).
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    let running = false;
+
     const checkBatchStatus = async () => {
+      if (cancelled) return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        timer = setTimeout(checkBatchStatus, 15000);
+        return;
+      }
       try {
         const res = await fetch('/api/automated-outreach');
         const data = await res.json();
         if (data.success) {
-          setBatchProgress({
+          const next = {
             isRunning: Boolean(data.isRunning),
             sent: data.sent || 0,
             total: data.total || 0,
             currentCreator: data.currentCreator || ''
-          });
+          };
+          running = next.isRunning;
+          setBatchProgress(prev =>
+            prev.isRunning === next.isRunning &&
+            prev.sent === next.sent &&
+            prev.total === next.total &&
+            prev.currentCreator === next.currentCreator
+              ? prev
+              : next
+          );
         }
       } catch (e) {
         // silent catch
       }
+      if (!cancelled) timer = setTimeout(checkBatchStatus, running ? 3000 : 15000);
+    };
+
+    const onVisible = () => {
+      if (!document.hidden) {
+        if (timer) clearTimeout(timer);
+        checkBatchStatus();
+      }
     };
 
     checkBatchStatus();
-    const interval = setInterval(checkBatchStatus, 3000);
-    return () => clearInterval(interval);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   // Load signature from localStorage
@@ -144,8 +176,13 @@ export default function DashboardPage() {
     return Array.from(set).sort();
   }, [creators]);
 
+  // Deferred so typing in search stays instant; filtering/rendering catches up in the background
+  const deferredFilters = useDeferredValue(filters);
+  const pendingCount = useMemo(() => creators.filter(c => c.email_status !== 'sent').length, [creators]);
+
   // Apply in-memory search, filter, and sorting
   const filteredCreators = useMemo(() => {
+    const filters = deferredFilters;
     let result = [...creators];
 
     // Search
@@ -197,7 +234,17 @@ export default function DashboardPage() {
     }
 
     return result;
-  }, [creators, filters]);
+  }, [creators, deferredFilters]);
+
+  // Stable callbacks so memoized table rows don't re-render on unrelated state changes
+  const openPitchModal = useCallback((c: Creator) => {
+    setSelectedCreatorForPitch(c);
+    setIsPitchModalOpen(true);
+  }, []);
+  const openDetailModal = useCallback((c: Creator) => {
+    setSelectedCreatorForDetail(c);
+    setIsDetailModalOpen(true);
+  }, []);
 
   // Handle Quick filter events
   const handleFilterToday = () => {
@@ -222,14 +269,14 @@ export default function DashboardPage() {
     });
   };
 
-  const handleQuickCopyEmail = (email: string) => {
+  const handleQuickCopyEmail = useCallback((email: string) => {
     navigator.clipboard.writeText(email);
     setCopiedEmail(email);
     setTimeout(() => setCopiedEmail(null), 1500);
-  };
+  }, []);
 
   // Update creator status locally when email is successfully sent
-  const handleEmailSentSuccess = (username: string, subject: string, body: string) => {
+  const handleEmailSentSuccess = useCallback((username: string, subject: string, body: string) => {
     setCreators((prev) =>
       prev.map((c) => {
         if (c.username.toLowerCase() === username.toLowerCase()) {
@@ -244,7 +291,7 @@ export default function DashboardPage() {
         return c;
       })
     );
-  };
+  }, []);
 
   const handleSyncSupabase = async () => {
     try {
@@ -280,7 +327,7 @@ export default function DashboardPage() {
         onSyncDb={handleSyncSupabase}
         isDbConnected={isDbConnected}
         totalCount={creators.length}
-        pendingCount={creators.filter(c => c.email_status !== 'sent').length}
+        pendingCount={pendingCount}
         batchProgress={batchProgress}
       />
 
@@ -366,19 +413,16 @@ export default function DashboardPage() {
             <p className="text-xs text-slate-400 mt-1">Connecting to database and verifying records</p>
           </div>
         ) : (
-          <CreatorTable
-            creators={filteredCreators}
-            onOpenPitchModal={(c) => {
-              setSelectedCreatorForPitch(c);
-              setIsPitchModalOpen(true);
-            }}
-            onOpenDetailModal={(c) => {
-              setSelectedCreatorForDetail(c);
-              setIsDetailModalOpen(true);
-            }}
-            onQuickCopyEmail={handleQuickCopyEmail}
-            copiedEmail={copiedEmail}
-          />
+          <div className={filters !== deferredFilters ? 'opacity-70 transition-opacity' : 'transition-opacity'}>
+            <CreatorTable
+              creators={filteredCreators}
+              resetKey={JSON.stringify(deferredFilters)}
+              onOpenPitchModal={openPitchModal}
+              onOpenDetailModal={openDetailModal}
+              onQuickCopyEmail={handleQuickCopyEmail}
+              copiedEmail={copiedEmail}
+            />
+          </div>
         )}
 
       </main>
@@ -434,7 +478,7 @@ export default function DashboardPage() {
         onBatchComplete={() => {
           fetchCreators();
         }}
-        pendingCount={creators.filter(c => c.email_status !== 'sent').length}
+        pendingCount={pendingCount}
       />
 
       <ApiMailSenderModal
